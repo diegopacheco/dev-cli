@@ -286,3 +286,47 @@ func TestGrafanaUsesBasicAuthAndShapesFrames(t *testing.T) {
 		t.Fatalf("unknown commands must list what is available, got %v", err)
 	}
 }
+
+func TestPrometheusInstantRangeAndTargets(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	var gotPath, gotStep string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/status/buildinfo":
+			w.Write([]byte(`{"status":"success","data":{"version":"3.0.0"}}`))
+		case "/api/v1/query", "/api/v1/query_range":
+			gotPath, gotStep = r.URL.Path, r.URL.Query().Get("step")
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"up","job":"loki"},"value":[1700000000,"1"]}]}}`))
+		case "/api/v1/targets":
+			w.Write([]byte(`{"data":{"activeTargets":[{"labels":{"job":"loki","instance":"loki:3100"},"health":"up"}]}}`))
+		case "/api/v1/label/__name__/values":
+			w.Write([]byte(`{"data":["up","go_goroutines"]}`))
+		case "/api/v1/labels":
+			w.Write([]byte(`{"data":["job","instance"]}`))
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	p := NewPrometheus(srv.URL)
+	p.Now = func() time.Time { return now }
+	if err := p.Connect(ctx, srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Execute(ctx, "up\n:range 10m\nup\ntargets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res[0].Rows[0][0] != `{__name__="up", job="loki"}` || res[0].Rows[0][2] != "1" {
+		t.Fatalf("instant vector must list series and value, got %+v", res[0].Rows)
+	}
+	if gotPath != "/api/v1/query_range" || gotStep != "5" {
+		t.Fatalf(":range must switch to query_range with a step of range/120, got %s step=%s", gotPath, gotStep)
+	}
+	if res[3].Rows[0][2] != "up" {
+		t.Fatalf("targets must show health, got %+v", res[3].Rows)
+	}
+	words := p.Words(ctx)
+	if !slices.Contains(words, "go_goroutines") || !slices.Contains(words, "instance") {
+		t.Fatalf("metric and label names must complete, got %v", words)
+	}
+}

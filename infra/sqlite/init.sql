@@ -22,3 +22,6 @@ INSERT INTO metrics (host_id, name, value, labels) VALUES
   (1, 'mem_used', 7.2, '{"unit":"GiB"}'),
   (2, 'cpu_usage', 77.1, '{"unit":"percent"}'),
   (3, 'queue_depth', 1284, '{"queue":"emails","priority":"high"}');
+WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 100)
+INSERT INTO metrics (host_id, name, value, labels)
+SELECT 1 + n % 3, 'latency_ms', n * 37 % 250, '{"route":"/orders","sample":' || n || '}' FROM seq;

@@ -124,7 +124,7 @@ func Lex(lang Language, line []rune, inBlock bool) ([]Token, bool) {
 				end++
 			}
 			kind := lang.lookup(string(line[i:end]))
-			if kind == Plain && lang.Name == "logql" && end < n && (line[end] == '=' || line[end] == '!') {
+			if kind == Plain && (lang.Name == "logql" || lang.Name == "promql") && end < n && (line[end] == '=' || line[end] == '!') {
 				kind = Label
 			}
 			tokens = append(tokens, Token{kind, i, end})

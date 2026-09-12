@@ -126,3 +126,18 @@ func TestIntegrationGrafana(t *testing.T) {
 		t.Fatalf("a Loki query through Grafana must return rows: %+v %v", q, err)
 	}
 }
+
+func TestIntegrationPrometheus(t *testing.T) {
+	b := NewPrometheus("")
+	ctx := connect(t, b, target("DEVCLI_PROMETHEUS", "http://127.0.0.1:9090"))
+	res, err := b.Execute(ctx, "up\ntargets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res[0].Rows) < 3 || len(res[1].Rows) < 3 {
+		t.Fatalf("prometheus scrapes itself, loki and grafana: %+v", res)
+	}
+	if words := b.Words(ctx); !slices.Contains(words, "up") {
+		t.Fatalf("metric names must complete, got %d words", len(words))
+	}
+}

@@ -74,6 +74,19 @@ func (e *Editor) Cursor() (int, int) {
 	return e.row, e.col
 }
 
+func (e *Editor) History() []string {
+	return e.history
+}
+
+func (e *Editor) Words() []string {
+	return e.words
+}
+
+func (e *Editor) Insert(text string) {
+	e.insert(text)
+	e.popup = nil
+}
+
 func (e *Editor) Popup() []string {
 	return e.popup
 }
@@ -280,7 +293,7 @@ func (e *Editor) HandleKey(event *tcell.EventKey) {
 		e.row++
 		e.col = min(e.col, len(e.lines[e.row]))
 	case tcell.KeyEscape:
-	case tcell.KeyCtrlK:
+	case tcell.KeyCtrlL:
 		e.SetText("")
 	default:
 		return

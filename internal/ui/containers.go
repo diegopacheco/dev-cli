@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diegopacheco/dev-cli/internal/sys"
@@ -25,7 +26,7 @@ type Containers struct {
 	table   *tview.Table
 	info    *tview.TextView
 	list    []sys.Container
-	visible bool
+	visible atomic.Bool
 	loop    bool
 }
 
@@ -44,20 +45,20 @@ func (c *Containers) Title() string                { return "Containers" }
 func (c *Containers) Root() tview.Primitive        { return c }
 func (c *Containers) FocusTarget() tview.Primitive { return c.table }
 func (c *Containers) Typing() bool                 { return false }
-func (c *Containers) Hide()                        { c.visible = false }
+func (c *Containers) Hide()                        { c.visible.Store(false) }
 func (c *Containers) Hints() string {
 	return "Enter/e shell · s stop · S start · k kill · d remove · r refresh"
 }
 
 func (c *Containers) Show() {
-	c.visible = true
+	c.visible.Store(true)
 	if c.loop {
 		return
 	}
 	c.loop = true
 	go func() {
 		for {
-			if c.visible {
+			if c.visible.Load() {
 				c.Refresh()
 			}
 			time.Sleep(3 * time.Second)
@@ -213,4 +214,14 @@ func (c *Containers) shell() {
 		return
 	}
 	c.setInfo(theme.Lime, "✔ back from "+ct.Name)
+}
+
+func (c *Containers) SelectID(id string) bool {
+	for i, ct := range c.list {
+		if ct.ID == id {
+			c.table.Select(i+1, 0)
+			return true
+		}
+	}
+	return false
 }

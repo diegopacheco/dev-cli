@@ -171,28 +171,40 @@ func ShapeLoki(data any) Result {
 		r.Value = values
 		r.Message = fmt.Sprintf("%d lines from %d streams", len(entries), len(result))
 		return r
-	case "matrix", "vector":
-		r := Result{Columns: []string{"series", "samples", "last"}, Value: result}
-		for _, s := range result {
-			points := list(field(s, "values"))
-			last := list(field(s, "value"))
-			if len(points) > 0 {
-				last = list(points[len(points)-1])
-			}
-			lastValue := ""
-			if len(last) == 2 {
-				lastValue = str(last[1])
-			}
-			count := len(points)
-			if resultType == "vector" {
-				count = 1
-			}
-			r.Rows = append(r.Rows, []any{labelString(field(s, "metric")), count, lastValue})
-		}
-		r.Message = fmt.Sprintf("%d series", len(result))
-		return r
+	case "matrix", "vector", "scalar":
+		return ShapeSeries(data)
 	}
 	return Result{Value: data, Message: resultType}
+}
+
+func ShapeSeries(data any) Result {
+	resultType := str(field(data, "resultType"))
+	result := list(field(data, "result"))
+	if resultType == "scalar" {
+		pair := list(field(data, "result"))
+		if len(pair) == 2 {
+			return Result{Columns: []string{"value"}, Rows: [][]any{{pair[1]}}, Value: data, Message: "scalar"}
+		}
+	}
+	r := Result{Columns: []string{"series", "samples", "last"}, Value: result}
+	for _, s := range result {
+		points := list(field(s, "values"))
+		last := list(field(s, "value"))
+		if len(points) > 0 {
+			last = list(points[len(points)-1])
+		}
+		lastValue := ""
+		if len(last) == 2 {
+			lastValue = str(last[1])
+		}
+		count := len(points)
+		if resultType == "vector" {
+			count = 1
+		}
+		r.Rows = append(r.Rows, []any{labelString(field(s, "metric")), count, lastValue})
+	}
+	r.Message = fmt.Sprintf("%d series", len(result))
+	return r
 }
 
 func (l *Loki) Words(ctx context.Context) []string {

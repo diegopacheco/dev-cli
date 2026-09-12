@@ -1,4 +1,4 @@
-DEL queue:jobs leaderboard features
+DEL queue:jobs leaderboard features stream:events
 SET user:1 "{\"name\":\"Ana Ribeiro\",\"lang\":\"go\",\"level\":9,\"tags\":[\"tui\",\"sql\"]}"
 SET user:2 "{\"name\":\"Lars Holm\",\"lang\":\"rust\",\"level\":7,\"tags\":[\"cli\"]}"
 HSET session:9f2c user_id 1 ip 10.0.0.7 agent devcli
@@ -6,3 +6,8 @@ RPUSH queue:jobs "{\"job\":\"reindex\",\"attempt\":1}" "{\"job\":\"backup\",\"at
 ZADD leaderboard 980 ana 870 mei 640 lars
 SADD features dashboard threads containers consoles
 SET counter:requests 1284
+SET config:flags "{\"palette\":true,\"discovery\":true,\"theme\":\"neon\"}"
+XADD stream:events * kind login user 1
+XADD stream:events * kind query user 2 ms 12
+XADD stream:events * kind logout user 1
+EXPIRE session:9f2c 86400

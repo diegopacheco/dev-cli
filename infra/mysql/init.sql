@@ -1,3 +1,6 @@
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
 CREATE TABLE users (
   id INT PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(80) NOT NULL,
@@ -23,3 +26,13 @@ INSERT INTO orders (user_id, total, status, items) VALUES
   (2, 49.00, 'shipped', '[{"sku":"CB-10","qty":3}]'),
   (3, 310.50, 'pending', '[{"sku":"MN-27","qty":1}]'),
   (1, 15.25, 'paid', '[{"sku":"ST-99","qty":5}]');
+CREATE TABLE events (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  kind VARCHAR(20) NOT NULL,
+  payload JSON,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+INSERT INTO events (user_id, kind, payload)
+WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 200)
+SELECT 1 + n % 4, ELT(1 + n % 3, 'login', 'query', 'logout'), JSON_OBJECT('n', n, 'ms', n * 7 % 500, 'ok', n % 5 <> 0) FROM seq;

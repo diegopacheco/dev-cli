@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/diegopacheco/dev-cli/internal/backend"
@@ -26,6 +27,8 @@ type Console struct {
 	err        error
 	cancel     context.CancelFunc
 	mu         sync.Mutex
+	backendMu  sync.Mutex
+	gen        atomic.Int64
 	conn       *tview.TextView
 	connEdit   *tview.InputField
 	connPages  *tview.Pages
@@ -123,7 +126,7 @@ func (c *Console) Hide()                        {}
 func (c *Console) Typing() bool                 { return true }
 
 func (c *Console) Hints() string {
-	return "Ctrl-R run · Enter run/newline · Tab complete · ↑↓ history · Ctrl-T table/json · Ctrl-E connection · F5 reload words · Ctrl-K clear · Esc cancel"
+	return "Ctrl-R run · Enter run/newline · Tab complete · ↑↓ history · Ctrl-T table/json · Ctrl-E connection · F5 words · Ctrl-L clear · Esc cancel"
 }
 
 func (c *Console) Show() {
@@ -135,8 +138,7 @@ func (c *Console) Show() {
 func (c *Console) capture(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Key() {
 	case tcell.KeyCtrlT:
-		c.asJSON = !c.asJSON
-		c.render()
+		c.ToggleJSON()
 		return nil
 	case tcell.KeyCtrlE:
 		c.connEdit.SetText(c.target)
@@ -176,20 +178,36 @@ func (c *Console) renderConn() {
 	case c.err != nil:
 		state = colored(theme.Red, "✖ offline")
 	}
-	c.conn.SetText(colored(theme.Magenta, " ⛁ "+c.title+" ▸ ") + colored(theme.Text, maskTarget(c.target)) + "  " + state)
+	c.conn.SetText(colored(theme.Magenta, " ⛁ "+c.title+" ▸ ") + colored(theme.Text, MaskTarget(c.target)) + "  " + state)
 }
 
 func (c *Console) setInfo(color, text string) {
 	c.info.SetText(" " + colored(color, text))
 }
 
+func (c *Console) Target() string  { return c.target }
+func (c *Console) Connected() bool { return c.connected }
+func (c *Console) Editor() *Editor { return c.editor }
+func (c *Console) ToggleJSON()     { c.asJSON = !c.asJSON; c.render() }
+func (c *Console) ReloadWords()    { c.loadWords() }
+func (c *Console) SetTarget(t string) {
+	c.target = t
+	c.Connect()
+}
+
 func (c *Console) Connect() {
 	c.connecting = true
 	c.connected = false
 	c.renderConn()
-	c.setInfo(theme.Yellow, "connecting to "+maskTarget(c.target))
+	c.setInfo(theme.Yellow, "connecting to "+MaskTarget(c.target))
 	target := c.target
+	gen := c.gen.Add(1)
 	go func() {
+		c.backendMu.Lock()
+		defer c.backendMu.Unlock()
+		if c.gen.Load() != gen {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		err := c.backend.Connect(ctx, target)
@@ -197,7 +215,11 @@ func (c *Console) Connect() {
 		if err == nil {
 			words = c.backend.Words(ctx)
 		}
-		c.queue(func() { c.connectDone(err, words) })
+		c.queue(func() {
+			if c.gen.Load() == gen {
+				c.connectDone(err, words)
+			}
+		})
 	}()
 }
 
@@ -221,7 +243,9 @@ func (c *Console) loadWords() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		c.backendMu.Lock()
 		words := c.backend.Words(ctx)
+		c.backendMu.Unlock()
 		c.queue(func() {
 			c.editor.SetWords(words)
 			c.setInfo(theme.Lime, fmt.Sprintf("● %d completion words reloaded", len(words)))
@@ -246,7 +270,9 @@ func (c *Console) Run(text string) {
 	go func() {
 		defer cancel()
 		start := time.Now()
+		c.backendMu.Lock()
 		results, err := c.backend.Execute(ctx, text)
+		c.backendMu.Unlock()
 		elapsed := time.Since(start)
 		c.queue(func() { c.runDone(results, err, elapsed) })
 	}()

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diegopacheco/dev-cli/internal/discover"
+	"github.com/diegopacheco/dev-cli/internal/sys"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -23,13 +26,14 @@ type captureStep struct {
 }
 
 var captureQueries = map[string]captureStep{
-	"MySQL":     {query: "SELECT u.id, u.name, u.profile, COUNT(o.id) AS orders, SUM(o.total) AS spent\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nGROUP BY u.id\nORDER BY spent DESC;"},
-	"Postgres":  {query: "SELECT name, profile->'tags' AS tags, profile\nFROM users\nWHERE (profile->>'level')::int > 6\nORDER BY name;", json: true},
-	"SQLite":    {query: "SELECT h.name, h.region, m.name AS metric, m.value, m.labels\nFROM hosts h\nJOIN metrics m ON m.host_id = h.id;", after: "SELECT name, value\nFROM met"},
-	"Cassandra": {query: "SELECT id, name, email, tags, profile\nFROM devcli.users;"},
-	"Redis":     {query: "GET user:1\nHGETALL session:9f2c\nZRANGE leaderboard 0 -1 WITHSCORES"},
-	"Loki":      {query: `{env="dev"} != "cache hit"`},
-	"Grafana":   {query: "dashboard devcli-logs"},
+	"MySQL":      {query: "SELECT u.id, u.name, u.profile, COUNT(o.id) AS orders, SUM(o.total) AS spent\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nGROUP BY u.id\nORDER BY spent DESC;"},
+	"Postgres":   {query: "SELECT name, profile->'tags' AS tags, profile\nFROM users\nWHERE (profile->>'level')::int > 6\nORDER BY name;", json: true},
+	"SQLite":     {query: "SELECT h.name, h.region, m.name AS metric, m.value, m.labels\nFROM hosts h\nJOIN metrics m ON m.host_id = h.id;", after: "SELECT name, value\nFROM met"},
+	"Cassandra":  {query: "SELECT id, name, email, tags, profile\nFROM devcli.users;"},
+	"Redis":      {query: "GET user:1\nHGETALL session:9f2c\nZRANGE leaderboard 0 -1 WITHSCORES"},
+	"Loki":       {query: `{env="dev"} != "cache hit"`},
+	"Grafana":    {query: "dashboard devcli-logs"},
+	"Prometheus": {query: "sum by (job) (scrape_samples_scraped)\ntargets"},
 }
 
 func Capture(targets Targets, dir string) error {
@@ -60,10 +64,19 @@ func Capture(targets Targets, dir string) error {
 	screen.SetSize(captureWidth, captureHeight)
 
 	a.Dashboard.Show()
+	found, err := discover.Containers(context.Background(), sys.Run)
+	if err != nil {
+		return err
+	}
 	shots := []struct {
 		name    string
 		prepare func() error
 	}{
+		{"splash", func() error {
+			a.SetFound(found)
+			a.ShowSplash()
+			return nil
+		}},
 		{"dashboard", func() error {
 			a.Switch(0)
 			if !settle(45*time.Second, func() bool {
@@ -131,7 +144,34 @@ func Capture(targets Targets, dir string) error {
 			return nil
 		}})
 	}
+	overlays := []struct {
+		name    string
+		prepare func() error
+	}{
+		{"connect", func() error {
+			a.Switch(a.TabIndex("dashboard"))
+			a.SetFound(found)
+			a.promptFound()
+			return nil
+		}},
+		{"palette", func() error {
+			a.Switch(a.TabIndex("postgres"))
+			a.SetFound(found)
+			a.OpenPalette()
+			a.Palette.SetQuery("post")
+			return nil
+		}},
+		{"shortcuts", func() error {
+			a.OpenShortcuts()
+			return nil
+		}},
+	}
+	shots = append(shots, overlays...)
 	for i, shot := range shots {
+		a.splashOn.Store(false)
+		for _, page := range []string{"splash", "connect", "palette", "shortcuts"} {
+			a.root.RemovePage(page)
+		}
 		fmt.Fprintln(os.Stderr, "capturing", shot.name)
 		if err := shot.prepare(); err != nil {
 			return err
@@ -172,6 +212,9 @@ func screenHTML(screen tcell.Screen, name string) string {
 			}
 			if attr&tcell.AttrDim != 0 {
 				fr, fgc, fb = fr*6/10, fgc*6/10, fb*6/10
+			}
+			if r == '█' {
+				r, br, bgc, bb = ' ', fr, fgc, fb
 			}
 			weight := "normal"
 			if attr&tcell.AttrBold != 0 {

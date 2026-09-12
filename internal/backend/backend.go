@@ -30,6 +30,7 @@ type Result struct {
 	Columns []string
 	Rows    [][]any
 	Logs    []LogLine
+	Text    string
 	Value   any
 	Message string
 	Elapsed time.Duration

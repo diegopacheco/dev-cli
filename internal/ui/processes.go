@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,7 +26,7 @@ type Processes struct {
 	all     []sys.Process
 	shown   []sys.Process
 	sortKey sys.SortKey
-	visible bool
+	visible atomic.Bool
 	loop    bool
 }
 
@@ -54,20 +55,20 @@ func (p *Processes) Title() string                { return "Processes" }
 func (p *Processes) Root() tview.Primitive        { return p }
 func (p *Processes) FocusTarget() tview.Primitive { return p.table }
 func (p *Processes) Typing() bool                 { return p.filter.HasFocus() }
-func (p *Processes) Hide()                        { p.visible = false }
+func (p *Processes) Hide()                        { p.visible.Store(false) }
 func (p *Processes) Hints() string {
 	return "/ filter · o sort CPU/MEM/PID · x SIGTERM · K SIGKILL · r refresh · Esc clear filter"
 }
 
 func (p *Processes) Show() {
-	p.visible = true
+	p.visible.Store(true)
 	if p.loop {
 		return
 	}
 	p.loop = true
 	go func() {
 		for {
-			if p.visible {
+			if p.visible.Load() {
 				p.Refresh()
 			}
 			time.Sleep(2 * time.Second)

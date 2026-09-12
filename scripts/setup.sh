@@ -14,9 +14,6 @@ go mod download
 log "building $BIN"
 go build -o "$BIN" .
 
-log "seeding sqlite $SQLITE_DB"
-sqlite3 "$SQLITE_DB" < "$ROOT/infra/sqlite/init.sql"
-
 log "pulling container images"
 podman-compose -f "$ROOT/podman-compose.yml" pull >"$LOGS/pull.log" 2>&1 || fail "image pull failed, see $LOGS/pull.log"
 

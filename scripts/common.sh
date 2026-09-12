@@ -24,6 +24,7 @@ export DEVCLI_CASSANDRA="127.0.0.1:$CASSANDRA/devcli"
 export DEVCLI_REDIS="redis://127.0.0.1:$REDIS/0"
 export DEVCLI_LOKI="http://127.0.0.1:$LOKI"
 export DEVCLI_GRAFANA="http://admin:devcli@127.0.0.1:$GRAFANA"
+export DEVCLI_PROMETHEUS="http://127.0.0.1:$PROMETHEUS"
 
 JVM_SAMPLES="jvm-java jvm-clojure"
 

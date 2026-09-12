@@ -1,3 +1,6 @@
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -22,3 +25,13 @@ INSERT INTO orders (user_id, total, status, items) VALUES
   (2, 49.00, 'shipped', '[{"sku":"CB-10","qty":3}]'),
   (3, 310.50, 'pending', '[{"sku":"MN-27","qty":1}]'),
   (1, 15.25, 'paid', '[{"sku":"ST-99","qty":5}]');
+CREATE TABLE events (
+  id SERIAL PRIMARY KEY,
+  user_id INT NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,
+  payload JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+INSERT INTO events (user_id, kind, payload)
+SELECT 1 + n % 4, (ARRAY['login', 'query', 'logout'])[1 + n % 3], jsonb_build_object('n', n, 'ms', n * 7 % 500, 'ok', n % 5 <> 0)
+FROM generate_series(1, 200) AS n;

@@ -107,6 +107,10 @@ func braille(screen tcell.Screen, x, y, w, h int, values []float64, color func(l
 	}
 }
 
+func BytesLabel(n float64) string {
+	return bytesLabel(n)
+}
+
 func bytesLabel(n float64) string {
 	units := []string{"B", "K", "M", "G", "T", "P"}
 	i := 0

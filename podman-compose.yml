@@ -7,8 +7,6 @@ services:
       MYSQL_DATABASE: devcli
     ports:
       - "${MYSQL:-3306}:3306"
-    volumes:
-      - ./infra/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,Z
   postgres:
     image: docker.io/library/postgres:18
     container_name: devcli-postgres
@@ -17,8 +15,6 @@ services:
       POSTGRES_DB: devcli
     ports:
       - "${POSTGRES:-5432}:5432"
-    volumes:
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,Z
   cassandra:
     image: docker.io/library/cassandra:5.0
     container_name: devcli-cassandra
@@ -54,3 +50,11 @@ services:
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro,Z
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro,Z
+  prometheus:
+    image: quay.io/prometheus/prometheus:latest
+    container_name: devcli-prometheus
+    command: --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS:-9090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z

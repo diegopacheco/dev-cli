@@ -25,7 +25,7 @@ func RenderResults(results []backend.Result, err error, asJSON bool) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		renderResult(&b, r, asJSON)
+		b.WriteString(RenderResult(r, asJSON, true))
 	}
 	if err != nil {
 		b.WriteString("\n" + colored(theme.Red, "✖ "+err.Error()) + "\n")
@@ -33,7 +33,13 @@ func RenderResults(results []backend.Result, err error, asJSON bool) string {
 	return b.String()
 }
 
-func renderResult(b *strings.Builder, r backend.Result, asJSON bool) {
+func RenderResult(r backend.Result, asJSON, withHeader bool) string {
+	var b strings.Builder
+	renderResult(&b, r, asJSON, withHeader)
+	return b.String()
+}
+
+func renderResult(b *strings.Builder, r backend.Result, asJSON, withHeader bool) {
 	header := colored(theme.Magenta, "▶ ") + colored(theme.Text, r.Title)
 	if r.Message != "" {
 		header += colored(theme.Dim, "  · ") + colored(theme.Lime, r.Message)
@@ -41,8 +47,14 @@ func renderResult(b *strings.Builder, r backend.Result, asJSON bool) {
 	if r.Elapsed > 0 {
 		header += colored(theme.Dim, "  · "+Duration(r.Elapsed))
 	}
-	b.WriteString(header + "\n")
+	if withHeader {
+		b.WriteString(header + "\n")
+	}
 	switch {
+	case r.Text != "" && !asJSON:
+		b.WriteString(r.Text)
+	case !withHeader && r.Columns == nil && r.Value == nil && len(r.Logs) == 0:
+		b.WriteString(r.Message + "\n")
 	case asJSON && r.Value != nil:
 		b.WriteString(syntax.Pretty(r.Value) + "\n")
 	case !asJSON && len(r.Logs) > 0:
@@ -147,7 +159,7 @@ func Table(columns []string, rows [][]any) string {
 	return b.String()
 }
 
-func maskTarget(target string) string {
+func MaskTarget(target string) string {
 	at := strings.LastIndex(target, "@")
 	scheme := strings.Index(target, "://")
 	if at < 0 || scheme < 0 || at < scheme {

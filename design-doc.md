@@ -22,10 +22,23 @@ and the same editor experience in every query console.
 | 9 | Redis | Redis command REPL |
 | 10 | Loki | LogQL REPL |
 | 11 | Grafana | Grafana HTTP API REPL |
+| 12 | Prometheus | PromQL REPL (v0.2) |
 
-Every console tab (5–11) shares one editor widget: syntax highlighting, line numbers, as-you-type
+Every console tab (5–12) shares one editor widget: syntax highlighting, line numbers, as-you-type
 auto-complete (static keywords plus live names pulled from the connected server), history, and a results pane
 that renders tables or pretty, colored JSON.
+
+### 1.1 v0.2 additions
+
+| Feature | Summary | Section |
+|---|---|---|
+| Cmd-K palette | Native Go overlay that searches tabs, commands, containers, JVMs, processes, completion words and history; Enter goes there | §5.4 |
+| Cmd-/ shortcuts | Grouped, colored, searchable modal that always fits the screen | §5.5 |
+| ASCII splash | Gradient `DEVCLI` banner at start, also printed by `--help` and one-shot runs | §5.6 |
+| Container discovery | Finds running Cassandra, Redis, Loki, Grafana, Prometheus, Postgres and MySQL containers and asks which ones to connect | §4.10 |
+| One-shot mode | `-sql --postgres`, `--sqlite`, `-redis`, `-loki`, `-grafana`, `-prometheus`, `-cassandra`, `-ps`, `-containers`, `-threads`, `-discover`, `--help` | §7 |
+| Prometheus | Eighth console and one-shot mode | §4.2 |
+| Sample data | `scripts/sample-all.sh start` / `stop` starts and fills every data store | §8, §10 |
 
 ## 2. Assumptions
 
@@ -46,6 +59,12 @@ Correct these before code exists; each one changes the build.
 7. **Thread dumps use `jcmd <pid> Thread.print -l`** from the JDK on `PATH`. All four languages run on the JVM,
    so the dump format is identical; the language only changes detection and how frame names are shown.
 8. **Redis host port is 6380** in the local compose, because 6379 is already taken on this machine.
+9. **"Cmd + K" in a terminal** only reaches a program when the terminal forwards Super. tcell turns on the kitty
+   keyboard protocol, so Ghostty, kitty and WezTerm report `Cmd` as `ModMeta` once the terminal's own `Cmd-K`
+   binding is removed. `Ctrl-K` always works as the same shortcut. The other macOS app shortcuts (zoom, print
+   screen, full screen, window position) belong to the terminal emulator, not to a TUI, and are not implemented.
+10. **"Ask the user if they want to connect"** means a prompt after the splash that lists every running data
+    container with its connect URL. Nothing connects until the user confirms.
 
 ## 3. Conflicts and decisions
 
@@ -130,10 +149,26 @@ Rules:
   and a bounded output buffer.
 - Every backend call takes a `context.Context` with a timeout (`10s` default), and `Esc` while a query runs cancels it.
 
+### 4.0 Two entry points
+
+`main.go` calls `cli.Parse`. No mode flag opens the TUI (`ui.App.Run`). A mode flag runs `cli.Execute` once, prints
+the results through the same renderers the TUI uses, and exits. Exit code 0 means ok, 1 a query or connection
+error, 2 invalid flags.
+
 ### 4.1 Package layout
 
 ```
-main.go                     flags, env, starts ui.Run or capture mode
+main.go                     parse flags, detect terminals, hand off to cli.Main
+internal/cli/cli.go         flag parsing, one-shot execution, TUI launch, banner
+internal/cli/ansi.go        tview color tags → 24-bit ANSI or plain text
+internal/cli/help.go        colored --help
+internal/discover/discover.go  podman/docker inspect → kind, host port, connect URL
+internal/ui/palette.go      Cmd-K overlay
+internal/ui/fuzzy.go        token fuzzy scoring with word-start bonuses
+internal/ui/shortcuts.go    Cmd-/ overlay and the shortcut table
+internal/ui/splash.go       ASCII banner and splash overlay
+internal/ui/prompt.go       discovered-container connect prompt
+internal/backend/prometheus.go
 internal/ui/app.go          tab bar, pages, global keys, theme, status line
 internal/theme/theme.go     neon palette, heat gradient
 internal/ui/draw.go         cell helpers: meters, braille graphs, byte labels
@@ -181,6 +216,7 @@ type Result struct {
     Columns []string
     Rows    [][]any
     Logs    []LogLine
+    Text    string
     Value   any
     Message string
     Elapsed time.Duration
@@ -200,6 +236,7 @@ type Result struct {
 | Cassandra | split on `;`, `session.Query(...).Iter()` with `MapScan`, 1000 row cap | `system_schema.keyspaces/tables/columns` | buffer ends with `;` |
 | Redis | tokenize with quotes, send RESP array | command names + up to 1000 keys from `SCAN` | always |
 | Loki | `labels`, `values <label>`, `:range 30m`, `:limit 100`, otherwise LogQL via `query_range` | label names and values | always |
+| Prometheus | `:range 30m` / `:range off`, `:step 15s`, `metrics [text]`, `labels`, `values <label>`, `targets`, `alerts`, `rules`, otherwise PromQL via `query` or `query_range` (step = range/120) | commands, metric names, label names | always |
 | Grafana | `health`, `search [q]`, `dashboard <uid>`, `datasources`, `folders`, `alerts`, `annotations`, `query <ds-uid> <expr>`, `get <path>` | commands, dashboard uids, datasource uids | always |
 
 ### 4.3 Syntax highlighting
@@ -296,6 +333,26 @@ confirm. State is colored: running lime, exited gray, paused yellow, other red.
 
 JDK frames (`java.`, `jdk.`, `sun.`) are dimmed so application frames stand out.
 
+### 4.10 Container discovery
+
+`podman ps -q` then one `podman inspect` over the ids (`docker` when podman is missing). For each running container:
+
+| Step | Rule |
+|---|---|
+| Kind | last image path segment without tag or digest, equal to or prefixed by a token: `postgres postgis timescaledb pgvector`, `mysql mariadb percona`, `cassandra scylla`, `redis valkey keydb`, `loki`, `grafana`, `prometheus`; names containing `exporter` are skipped |
+| Port | `NetworkSettings.Ports["<default port>/tcp"][0].HostPort`; a container without a published port is not reachable and is skipped |
+| Host | `HostIp`, with empty, `0.0.0.0` and `::` mapped to `127.0.0.1` |
+| Credentials | read from the container env: the official Postgres, MySQL/MariaDB, Redis and Grafana admin variables (Grafana falls back to `admin/admin`) |
+
+`grafana/loki` is Loki because only the last path segment counts. At TUI start the scan runs while the splash is
+up. When it finds containers, the connect prompt opens after the splash:
+- The first container of each kind is pre-checked.
+- Checking another container of the same kind unchecks the first, because a console holds one connection.
+- `Enter` retargets the chosen consoles.
+
+The Console guards reconnects with a generation counter and a backend mutex. If a lazy connect to the default
+target is still running, its late result is dropped.
+
 ## 5. UI
 
 ### 5.1 Layout
@@ -327,9 +384,9 @@ Wide terminals split editor and results side by side; below 120 columns they sta
 
 | Scope | Keys |
 |---|---|
-| Global | `Ctrl-N` / `Ctrl-P` next / previous tab, `F1`–`F11` jump, click a tab, `Ctrl-Q` quit |
+| Global | `Cmd-K` / `Ctrl-K` palette, `Cmd-/` / `Ctrl-/` / `?` shortcuts, `Cmd-1..9`, `Cmd-0`, `F1`–`F12` jump, `Ctrl-N` / `Ctrl-P` next / previous tab, click a tab, `Ctrl-Q` quit from anywhere |
 | Lists (tabs 1–4) | `↑↓` / `j k` select, `/` filter, `Esc` clear filter, `q` quit, `r` refresh |
-| Editor | `Ctrl-R` run buffer, `Enter` newline or run (§4.2), `Tab` accept completion, `↑↓` popup or lines, history on first / last line, `Ctrl-K` clear buffer, `Ctrl-T` table / JSON, `PgUp/PgDn` scroll results, `Ctrl-E` edit connection, `F5` reload completions, `Esc` close popup or cancel running query |
+| Editor | `Ctrl-R` run buffer, `Enter` newline or run (§4.2), `Tab` accept completion, `↑↓` popup or lines, history on first / last line, `Ctrl-L` clear buffer (Ctrl-K opens the palette since v0.2), `Ctrl-T` table / JSON, `PgUp/PgDn` scroll results, `Ctrl-E` edit connection, `F5` reload completions, `Esc` close popup or cancel running query |
 
 ### 5.3 Palette
 
@@ -348,6 +405,58 @@ Wide terminals split editor and results side by side; below 120 columns they sta
 
 Meters and graphs use a green → yellow → red gradient per cell. The tab bar logo is a cyan → magenta gradient.
 
+### 5.4 Cmd-K palette
+
+A custom tview primitive drawn as a centered overlay page, with no library behind it.
+- **Opening:** `Cmd-K`, reported as `KeyRune 'k'` with `ModMeta`, or `Ctrl-K`. The app input capture checks for it
+  before any tab, so the palette opens from inside an editor too.
+- **Empty query:** shows tabs and commands.
+- **Typed query:** adds these sources.
+
+| Kind | Source | Enter |
+|---|---|---|
+| tab | every tab | switch |
+| action | shortcuts, discover, refresh lists, quit; for the current console run, table/JSON, reload words, clear, reconnect | run it |
+| connect | discovered containers | retarget that console and switch to it |
+| container | Containers list | switch and select the row |
+| jvm | Threads list | switch, select, dump |
+| process | Processes list, or the dashboard sample before that tab opened | switch and filter to the pid |
+| mysql, postgres, redis, … | each console's live completion words | switch and insert the word |
+| history | each console's history | switch and load the query |
+
+Scoring (`ui.Fuzzy`) splits the query into tokens, and every token must match the title or the kind and detail.
+- **Substring match:** scores higher, with bonuses for a match at the start or at a word start.
+- **Subsequence match:** scores per letter, with bonuses for word starts and consecutive letters.
+- **Title matches** count double, and matched title letters are underlined.
+- **Kind weight:** tab 60, connect 50, action 40, container and jvm 30, words 15, history 10, process 0. Navigation
+  targets rank above completion noise.
+- **Limit:** the list keeps the top 200.
+
+Keys: `↑↓`, `PgUp/PgDn`, `Enter`, `Esc` (clears the query first, then closes), `Ctrl-K` (closes).
+
+### 5.5 Cmd-/ shortcuts
+
+One `shortcutGroups` table feeds both the modal and its filter. Each group has its own icon glyph and color; the icon,
+title, rule and keys of a group share that color. Groups flow into 3 columns at 110+ columns wide, 2 at 72+, and
+otherwise 1, each group placed in the shortest column. The modal takes at most 92% of the screen height and
+scrolls inside itself, so no row is cut off. The search box is focused and filters as you type:
+- matching a group title keeps the whole group;
+- otherwise only matching rows stay;
+- a count shows how many shortcuts matched, with a plain message when none do.
+
+`Esc` clears the search first and closes on an empty box.
+
+### 5.6 ASCII splash
+
+The banner is built from six letters in the ANSI Shadow style, each row joined per letter so widths always line up
+(a test enforces equal row widths). In the TUI the splash is an overlay:
+- **Banner:** block cells follow a moving cyan → magenta → cyan gradient, and shadow cells are dim.
+- **Status:** a spinner line reports the container scan.
+- **Closing:** after 1.8 s or on any key, and then the connect prompt opens if the scan found containers.
+
+`--help` prints the banner to stdout; one-shot runs print it to stderr only when stderr is a terminal and `-q` is
+not set, so pipes stay clean.
+
 ## 6. Configuration
 
 | Variable | Default |
@@ -360,17 +469,33 @@ Meters and graphs use a green → yellow → red gradient per cell. The tab bar 
 | `DEVCLI_LOKI` | `http://127.0.0.1:3100` |
 | `DEVCLI_GRAFANA` | `http://admin:devcli@127.0.0.1:3000` |
 | `DEVCLI_GRAFANA_TOKEN` | empty; when set it is sent as a Bearer token |
+| `DEVCLI_PROMETHEUS` | `http://127.0.0.1:9090` |
 
-Consoles connect lazily the first time their tab opens. Passwords are masked in the connection bar.
+Consoles connect lazily the first time their tab opens, or to a discovered container once the user picks it.
+Passwords are masked in the connection bar, the prompt, the palette and `-discover` output.
 
 ## 7. CLI contract
 
 | Command | Effect |
 |---|---|
-| `devcli` | Open the TUI |
-| `devcli --tab redis` | Open on a given tab |
-| `devcli --capture DIR` | Render every tab into a 170×50 simulation screen and write `DIR/NN-tab.html` |
-| `devcli --version` | Print the version |
+| `devcli` | Open the TUI: splash, connect prompt, dashboard |
+| `devcli -sql --postgres QUERY`, `-sql --mysql QUERY`, `--sqlite QUERY` (`--sqllite`) | One-shot SQL; a dialect flag alone implies `-sql` |
+| `devcli -cassandra QUERY` (`-cql`), `-redis COMMAND`, `-loki LOGQL`, `-grafana COMMAND`, `-prometheus PROMQL` | One-shot query |
+| `devcli -ps [FILTER]`, `-containers`, `-threads [PID]`, `-discover` | One-shot listings and thread dump |
+| `-json`, `-target URL`, `-timeout 30s`, `-no-color`, `-q` | Output and connection options |
+| `--help`, `--version`, `-tab NAME`, `-no-discover`, `-capture DIR` | Help with banner, version, TUI start tab, skip scan, 170×50 HTML capture of 16 screens |
+
+Rules:
+- Go's `flag` package accepts one or two dashes, and options must come before the query.
+- The query is the remaining arguments joined with spaces; when there are none and stdin is not a terminal, stdin is read.
+- More than one mode or dialect is an error, never a guess.
+
+| Output | Terminal | Pipe |
+|---|---|---|
+| Banner | stderr, unless `-q` | none |
+| Result header (`▶ title · rows · time`) | yes | no |
+| Colors | 24-bit ANSI, unless `-no-color` / `NO_COLOR` | none |
+| `-json` | colored JSON per result | plain JSON that `jq` parses |
 
 ## 8. Local infrastructure
 
@@ -383,9 +508,18 @@ Consoles connect lazily the first time their tab opens. Passwords are masked in 
 | cassandra | `cassandra:5.0` (512M heap) | 9042 | `infra/cassandra/init.cql` via `cqlsh` in the container |
 | redis | `redis:8` | 6380 | JSON strings, hashes, lists, sorted sets via `redis-cli` in the container |
 | loki | `grafana/loki:3.5.5` | 3100 | JSON log lines pushed through `/loki/api/v1/push` |
-| grafana | `grafana/grafana:latest` | 3000 | provisioned Loki datasource and one dashboard |
+| grafana | `grafana/grafana:latest` | 3000 | provisioned Loki and Prometheus datasources and one dashboard |
+| prometheus | `prometheus/prometheus:latest` | 9090 | scrapes itself, Loki and Grafana every 5 s |
 
-SQLite needs no container: `scripts/setup.sh` builds `.run/devcli.db` from `infra/sqlite/init.sql`.
+SQLite needs no container: `scripts/sample-all.sh start` builds `.run/devcli.db` from `infra/sqlite/init.sql`.
+
+`scripts/sample-all.sh start` waits until every service answers a real query, not just an open port. It then loads
+every seed on each run. The seeds drop and recreate their tables, so running start twice gives the same data:
+- **Postgres and MySQL:** 200 generated `events` rows.
+- **Redis:** includes a stream.
+- **SQLite:** 100 latency samples.
+
+`stop` stops the sample JVMs and the containers and waits for every port to close.
 A small Java program in `infra/jvm/` runs a few named threads (one pair deadlocked) so the Threads tab and its
 integration test have a real JVM to dump.
 
@@ -407,16 +541,28 @@ Unit tests (`go test ./...`), no network:
 | jvm | language detection per marker; dump parsing of states, locks and deadlock section; demangling table §4.9 |
 | loki / grafana | `httptest` servers: request paths and parameters, result shaping, error bodies surfaced |
 | sqlite backend | real in-memory database: rows, affected counts, words include tables and columns |
+| prometheus | instant vs `:range` path and step, targets health, metric and label completion |
+| discover | connect URLs from env and ports, exporters skipped, unpublished ports skipped, `grafana/loki` is Loki, tab order |
+| palette | Cmd-K and Ctrl-K open it from an editor; tab name ranks first; pid finds its process; live key inserts into Redis; Esc clears then closes; tabs and connect outrank noise |
+| shortcuts | title match keeps a group, row match keeps rows, zero count, narrow screen scrolls |
+| connect prompt | one checked per kind, Enter connects checked; consoles retarget |
+| keys | Cmd-digit switches tabs while typing |
+| cli | mode parsing and ambiguity errors, ANSI conversion and unescaping, piped `-json` parses, terminal banner and colors, `-q`, exit codes, help lists every mode, `-target` override |
 
-Integration tests (`-tags integration`), run by `scripts/test-all.sh` when the compose stack is up: each backend
-connects to its container, runs a seeded query, checks rows and completion words; the JVM test dumps the sample
-process and expects the deadlock to be detected.
+Integration tests (`-tags integration`), run by `scripts/test-all.sh` when the compose stack is up:
+- Each backend connects to its container, runs a seeded query, and checks rows and completion words.
+- The JVM test dumps the sample process and expects the deadlock to be detected.
+- The CLI test runs every one-shot mode against the stack.
+
+Unit tests run with `-race`, which found and fixed a data race on the tabs' visibility flags. A pty run sends the real
+kitty protocol bytes for `Cmd-K` (`ESC [107;9u`) and `Cmd-/` (`ESC [47;9u`) and confirms the palette and the
+shortcuts open and that `Ctrl-Q` exits.
 
 ## 10. Scripts
 
-`scripts/` follows the scripts skill: `ports.env`, `common.sh`, `setup.sh` (Go deps, build `bin/devcli`, SQLite
-seed, compile the JVM sample), `start-all.sh` (compose up, wait for ports, seed Redis / Cassandra / Loki, start the
-JVM sample), `stop-all.sh`, `status.sh`, `test-all.sh` (vet, unit, integration), `ui.sh` (launch the TUI with the
+`scripts/` follows the scripts skill: `ports.env`, `common.sh`, `setup.sh` (Go deps, build `bin/devcli`, pull
+images), `sample-all.sh start|stop` (compose up, wait for services, load every seed and start the JVM samples; or
+stop everything), `start-all.sh` / `stop-all.sh` (delegate to `sample-all.sh`), `status.sh`, `test-all.sh` (vet, unit, integration), `ui.sh` (launch the TUI with the
 local env), `sql-console.sh` (native console in a container: `mysql`, `postgres`, `cassandra`, `redis`).
 
 ## 11. Build order
@@ -446,6 +592,13 @@ local env), `sql-console.sh` (native console in a container: `mysql`, `postgres`
 | 11 | Short JSON arrays | Printed on one line when they hold only scalars, so tag lists do not push documents off screen |
 | 12 | Grafana readiness | `start-all.sh` waits on `/api/datasources/uid/loki/health`; `/api/health` answers before the Loki plugin registers |
 | 13 | Volumes | `df` rows for `/System/Volumes/Data` and `/Volumes/*`; the sealed `/` snapshot always reads about 1% |
+| 14 | Cmd-K | Native overlay primitive; `ModMeta` via the kitty protocol plus `Ctrl-K`; editor clear moved to `Ctrl-L` |
+| 15 | Palette ranking | Fuzzy score plus a per-kind weight so tabs and connect actions beat long metric names |
+| 16 | Discovery | `inspect` JSON, last image segment, env credentials; a prompt instead of auto-connecting |
+| 17 | One-shot rendering | Reuse the TUI renderers and convert tview tags to ANSI instead of writing a second renderer |
+| 18 | Banner stream | stderr for one-shot runs so stdout is pipe-safe; stdout for `--help` |
+| 19 | Seeds | Applied by `sample-all.sh` through `podman exec` on every start instead of `docker-entrypoint-initdb.d`, so data reloads without recreating containers |
+| 20 | Ctrl-Q | Handled before overlays so quitting always works |
 
 ## 13. Not in scope
 

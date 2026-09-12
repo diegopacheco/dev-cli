@@ -128,3 +128,10 @@ func TestScalarRendersNullAndBytes(t *testing.T) {
 		t.Fatal("NULL and text bytes should be readable in tables")
 	}
 }
+
+func TestPromQLHighlightsFunctionsLabelsAndDurations(t *testing.T) {
+	k := kinds(PromQL, `sum by (job) (rate(http_requests_total{job="api"}[5m]))`)
+	if k["rate"] != Function || k["sum"] != Function || k["by"] != Keyword || k["job"] != Label || k["5m"] != Number {
+		t.Fatalf("got %v", k)
+	}
+}

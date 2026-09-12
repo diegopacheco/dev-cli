@@ -168,7 +168,7 @@ func writeCompact(b *strings.Builder, v any) {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteString(strconv.Quote(p.Key))
+			b.WriteString(quote(p.Key))
 			b.WriteByte(':')
 			writeCompact(b, p.Value)
 		}
@@ -183,7 +183,7 @@ func writeCompact(b *strings.Builder, v any) {
 		}
 		b.WriteByte(']')
 	case string:
-		b.WriteString(strconv.Quote(x))
+		b.WriteString(quote(x))
 	case nil:
 		b.WriteString("null")
 	default:
@@ -212,7 +212,7 @@ func writePretty(b *strings.Builder, v any, depth int) {
 		}
 		b.WriteString(tag(theme.Dim, "{") + "\n")
 		for i, p := range x {
-			b.WriteString(indent + tag(theme.Cyan, strconv.Quote(p.Key)) + tag(theme.Dim, ": "))
+			b.WriteString(indent + tag(theme.Cyan, quote(p.Key)) + tag(theme.Dim, ": "))
 			writePretty(b, p.Value, depth+1)
 			if i < len(x)-1 {
 				b.WriteString(tag(theme.Dim, ","))
@@ -240,7 +240,7 @@ func writePretty(b *strings.Builder, v any, depth int) {
 		}
 		b.WriteString(closing + tag(theme.Dim, "]"))
 	case string:
-		b.WriteString(tag(theme.Lime, strconv.Quote(x)))
+		b.WriteString(tag(theme.Lime, quote(x)))
 	case json.Number:
 		b.WriteString(tag(theme.Orange, string(x)))
 	case bool:
@@ -281,7 +281,7 @@ func writeColoredCompact(b *strings.Builder, v any) {
 			if i > 0 {
 				b.WriteString(tag(theme.Dim, ", "))
 			}
-			b.WriteString(tag(theme.Cyan, strconv.Quote(p.Key)) + tag(theme.Dim, ":"))
+			b.WriteString(tag(theme.Cyan, quote(p.Key)) + tag(theme.Dim, ":"))
 			writeColoredCompact(b, p.Value)
 		}
 		b.WriteString(tag(theme.Dim, "}"))
@@ -297,4 +297,12 @@ func writeColoredCompact(b *strings.Builder, v any) {
 	default:
 		writePretty(b, x, 0)
 	}
+}
+
+func quote(s string) string {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.Encode(s)
+	return strings.TrimSuffix(b.String(), "\n")
 }

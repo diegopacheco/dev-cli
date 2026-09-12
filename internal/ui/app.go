@@ -1,11 +1,15 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diegopacheco/dev-cli/internal/backend"
+	"github.com/diegopacheco/dev-cli/internal/discover"
 	"github.com/diegopacheco/dev-cli/internal/sys"
 	"github.com/diegopacheco/dev-cli/internal/theme"
 	"github.com/gdamore/tcell/v2"
@@ -37,6 +41,12 @@ type App struct {
 	Containers *Containers
 	Threads    *Threads
 	Consoles   []*Console
+	Palette    *Palette
+	found      []discover.Found
+	scanning   bool
+	scanErr    error
+	splashOn   atomic.Bool
+	NoDiscover bool
 }
 
 type tabBar struct {
@@ -95,7 +105,7 @@ func (b *tabBar) MouseHandler() func(action tview.MouseAction, event *tcell.Even
 }
 
 type Targets struct {
-	MySQL, Postgres, SQLite, Cassandra, Redis, Loki, Grafana, GrafanaToken string
+	MySQL, Postgres, SQLite, Cassandra, Redis, Loki, Grafana, GrafanaToken, Prometheus string
 }
 
 func applyStyles() {
@@ -145,6 +155,7 @@ func New(targets Targets, queue func(func())) *App {
 		backend.NewRedis(targets.Redis),
 		backend.NewLoki(targets.Loki),
 		backend.NewGrafana(targets.Grafana, targets.GrafanaToken),
+		backend.NewPrometheus(targets.Prometheus),
 	}
 	for _, b := range backends {
 		c := NewConsole(b.Name(), b, a.queue, focus)
@@ -189,30 +200,64 @@ func (a *App) Switch(i int) {
 	a.pages.SwitchToPage(t.Title())
 	t.Show()
 	a.app.SetFocus(t.FocusTarget())
-	a.status.SetText(" " + colored(theme.Cyan, t.Title()) + colored(theme.Dim, " │ ") + colored(theme.Text, t.Hints()) + colored(theme.Dim, " │ Ctrl-N/P tabs · F1-F11 · Ctrl-Q quit"))
+	a.hints("")
+}
+
+func (a *App) hints(flash string) {
+	t := a.tabs[a.current]
+	text := " " + colored(theme.Cyan, t.Title()) + colored(theme.Dim, " │ ")
+	if flash != "" {
+		text += flash + colored(theme.Dim, " │ ")
+	}
+	a.status.SetText(text + colored(theme.Text, t.Hints()) + colored(theme.Dim, " │ ⌘K search · ⌘/ keys · Ctrl-Q quit"))
+}
+
+func isMeta(event *tcell.EventKey, r rune) bool {
+	return event.Key() == tcell.KeyRune && event.Rune() == r && event.Modifiers()&(tcell.ModMeta|tcell.ModCtrl) != 0
 }
 
 func (a *App) keys(event *tcell.EventKey) *tcell.EventKey {
+	if event.Key() == tcell.KeyCtrlQ || event.Key() == tcell.KeyCtrlC {
+		a.app.Stop()
+		return nil
+	}
 	if name, _ := a.root.GetFrontPage(); name != "main" {
 		return event
 	}
-	switch key := event.Key(); {
-	case key == tcell.KeyCtrlQ || key == tcell.KeyCtrlC:
-		a.app.Stop()
+	if event.Key() == tcell.KeyCtrlK || isMeta(event, 'k') {
+		a.OpenPalette()
 		return nil
+	}
+	if event.Key() == tcell.KeyCtrlUnderscore || isMeta(event, '/') {
+		a.OpenShortcuts()
+		return nil
+	}
+	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModMeta != 0 && event.Rune() >= '0' && event.Rune() <= '9' {
+		n := int(event.Rune() - '0')
+		if n == 0 {
+			n = 10
+		}
+		a.Switch(n - 1)
+		return nil
+	}
+	switch key := event.Key(); {
 	case key == tcell.KeyCtrlN:
 		a.Switch((a.current + 1) % len(a.tabs))
 		return nil
 	case key == tcell.KeyCtrlP:
 		a.Switch((a.current - 1 + len(a.tabs)) % len(a.tabs))
 		return nil
-	case key >= tcell.KeyF1 && key <= tcell.KeyF11:
+	case key >= tcell.KeyF1 && key <= tcell.KeyF12:
 		a.Switch(int(key - tcell.KeyF1))
 		return nil
 	case key == tcell.KeyRune && !a.tabs[a.current].Typing():
 		r := event.Rune()
 		if r == 'q' {
 			a.app.Stop()
+			return nil
+		}
+		if r == '?' {
+			a.OpenShortcuts()
 			return nil
 		}
 		if r >= '1' && r <= '9' {
@@ -269,10 +314,228 @@ func (a *App) Run(tab string) error {
 	}
 	a.Dashboard.Show()
 	a.Switch(start)
+	a.ShowSplash()
+	if !a.NoDiscover {
+		a.Discover(false)
+	}
+	go func() {
+		for a.splashOn.Load() {
+			time.Sleep(80 * time.Millisecond)
+			a.app.QueueUpdateDraw(func() {})
+		}
+	}()
+	time.AfterFunc(1800*time.Millisecond, func() { a.queue(a.CloseSplash) })
 	go func() {
 		for range time.Tick(time.Second) {
 			a.app.QueueUpdateDraw(func() {})
 		}
 	}()
 	return a.app.Run()
+}
+
+func (a *App) overlay(name string, p tview.Primitive) {
+	a.root.RemovePage(name)
+	a.root.AddPage(name, p, true, true)
+	a.app.SetFocus(p)
+}
+
+func (a *App) closeOverlay(name string) {
+	a.root.RemovePage(name)
+	if front, p := a.root.GetFrontPage(); front != "main" {
+		a.app.SetFocus(p)
+		return
+	}
+	a.app.SetFocus(a.tabs[a.current].FocusTarget())
+}
+
+func (a *App) OpenPalette() {
+	if front, _ := a.root.GetFrontPage(); front == "palette" {
+		a.closeOverlay("palette")
+		return
+	}
+	a.Palette = NewPalette(a.PaletteItems, func() { a.closeOverlay("palette") })
+	a.overlay("palette", a.Palette)
+}
+
+func (a *App) OpenShortcuts() {
+	a.overlay("shortcuts", NewShortcuts(func() { a.closeOverlay("shortcuts") }))
+}
+
+func (a *App) ShowSplash() {
+	a.splashOn.Store(true)
+	a.overlay("splash", NewSplash(a.splashStatus, a.CloseSplash))
+}
+
+func (a *App) CloseSplash() {
+	if !a.splashOn.Swap(false) {
+		return
+	}
+	a.closeOverlay("splash")
+	a.promptFound()
+}
+
+func (a *App) splashStatus() (string, string) {
+	switch {
+	case a.NoDiscover:
+		return theme.Dim, "container discovery off"
+	case a.scanning:
+		return theme.Yellow, "scanning podman / docker for databases…"
+	case a.scanErr != nil:
+		return theme.Red, "container scan failed: " + a.scanErr.Error()
+	}
+	return theme.Lime, fmt.Sprintf("found %d data containers", len(a.found))
+}
+
+func (a *App) Discover(announce bool) {
+	a.scanning = true
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		found, err := discover.Containers(ctx, sys.Run)
+		a.queue(func() {
+			a.scanning = false
+			a.found, a.scanErr = found, err
+			switch {
+			case err != nil && announce:
+				a.hints(colored(theme.Red, "✖ container scan: "+err.Error()))
+			case len(found) == 0 && announce:
+				a.hints(colored(theme.Yellow, "no database, cache or observability containers running"))
+			}
+			if !a.splashOn.Load() {
+				a.promptFound()
+			}
+		})
+	}()
+}
+
+func (a *App) SetFound(found []discover.Found) {
+	a.found = found
+}
+
+func (a *App) promptFound() {
+	if len(a.found) == 0 || a.scanning {
+		return
+	}
+	if front, _ := a.root.GetFrontPage(); front != "main" {
+		return
+	}
+	found := a.found
+	a.found = nil
+	a.overlay("connect", NewConnectPrompt(found, a.ConnectFound, func() { a.closeOverlay("connect") }))
+}
+
+func (a *App) console(kind string) (*Console, int) {
+	for i, t := range a.tabs {
+		if c, ok := t.(*Console); ok && strings.EqualFold(c.Title(), kind) {
+			return c, i
+		}
+	}
+	return nil, -1
+}
+
+func (a *App) ConnectFound(chosen []discover.Found) {
+	var names []string
+	for _, f := range chosen {
+		if c, _ := a.console(f.Kind); c != nil {
+			c.SetTarget(f.Target)
+			names = append(names, f.Kind)
+		}
+	}
+	if len(names) > 0 {
+		a.hints(colored(theme.Lime, "✔ connecting "+strings.Join(names, ", ")))
+	}
+}
+
+func (a *App) PaletteItems(query string) []PaletteItem {
+	var items []PaletteItem
+	for i, t := range a.tabs {
+		i := i
+		keys := fmt.Sprintf("F%d", i+1)
+		if i < 10 {
+			keys = fmt.Sprintf("⌘%d · F%d", (i+1)%10, i+1)
+		}
+		items = append(items, PaletteItem{Kind: "tab", Title: t.Title(), Detail: keys, Run: func() { a.Switch(i) }})
+	}
+	current, _ := a.tabs[a.current].(*Console)
+	actions := []PaletteItem{
+		{Kind: "action", Title: "Show all shortcuts", Detail: "⌘/", Run: a.OpenShortcuts},
+		{Kind: "action", Title: "Discover containers and connect", Detail: "podman / docker", Run: func() { a.Discover(true) }},
+		{Kind: "action", Title: "Refresh processes", Detail: "Processes", Run: func() { a.Switch(1); go a.Processes.Refresh() }},
+		{Kind: "action", Title: "Refresh containers", Detail: "Containers", Run: func() { a.Switch(2); go a.Containers.Refresh() }},
+		{Kind: "action", Title: "Refresh JVMs", Detail: "Threads", Run: func() { a.Switch(3); go a.Threads.Discover() }},
+		{Kind: "action", Title: "Quit devcli", Detail: "Ctrl-Q", Run: a.app.Stop},
+	}
+	if current != nil {
+		c := current
+		actions = append(actions,
+			PaletteItem{Kind: "action", Title: "Run editor buffer", Detail: c.Title() + " · Ctrl-R", Run: func() { c.editor.run() }},
+			PaletteItem{Kind: "action", Title: "Toggle table / JSON", Detail: c.Title() + " · Ctrl-T", Run: c.ToggleJSON},
+			PaletteItem{Kind: "action", Title: "Reload completion words", Detail: c.Title() + " · F5", Run: c.ReloadWords},
+			PaletteItem{Kind: "action", Title: "Clear editor", Detail: c.Title() + " · Ctrl-L", Run: func() { c.editor.SetText("") }},
+			PaletteItem{Kind: "action", Title: "Reconnect", Detail: MaskTarget(c.Target()), Run: c.Connect},
+		)
+	}
+	items = append(items, actions...)
+	if strings.TrimSpace(query) == "" {
+		return items
+	}
+	for _, f := range a.found {
+		f := f
+		items = append(items, PaletteItem{Kind: "connect", Title: "Connect " + f.Kind + " to " + f.Container, Detail: MaskTarget(f.Target), Run: func() {
+			a.ConnectFound([]discover.Found{f})
+			_, i := a.console(f.Kind)
+			a.Switch(i)
+		}})
+	}
+	for _, ct := range a.Containers.list {
+		ct := ct
+		items = append(items, PaletteItem{Kind: "container", Title: ct.Name, Detail: ct.State + " · " + ct.Image, Run: func() {
+			a.Switch(2)
+			a.Containers.SelectID(ct.ID)
+		}})
+	}
+	for _, p := range a.Threads.jvms {
+		p := p
+		items = append(items, PaletteItem{Kind: "jvm", Title: p.Main, Detail: fmt.Sprintf("%s · pid %d · thread dump", p.Language, p.PID), Run: func() {
+			a.Switch(3)
+			a.Threads.SelectPID(p.PID)
+			a.Threads.DumpSelected()
+		}})
+	}
+	procs := a.Processes.all
+	if len(procs) == 0 {
+		procs = a.Dashboard.procs
+	}
+	for _, p := range procs {
+		p := p
+		items = append(items, PaletteItem{Kind: "process", Title: p.Name(), Detail: fmt.Sprintf("pid %d · %s · %.1f%% cpu", p.PID, p.User, p.CPU), Run: func() {
+			a.Switch(1)
+			a.Processes.SetFilter(strconv.Itoa(p.PID))
+		}})
+	}
+	for i, t := range a.tabs {
+		c, ok := t.(*Console)
+		if !ok {
+			continue
+		}
+		i := i
+		for n, w := range c.editor.Words() {
+			if n >= 2000 {
+				break
+			}
+			w := w
+			items = append(items, PaletteItem{Kind: strings.ToLower(c.Title()), Title: w, Detail: "insert into " + c.Title() + " editor", Run: func() {
+				a.Switch(i)
+				c.editor.Insert(w)
+			}})
+		}
+		for _, h := range c.editor.History() {
+			h := h
+			items = append(items, PaletteItem{Kind: "history", Title: strings.ReplaceAll(h, "\n", " "), Detail: c.Title(), Run: func() {
+				a.Switch(i)
+				c.editor.SetText(h)
+			}})
+		}
+	}
+	return items
 }

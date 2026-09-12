@@ -9,5 +9,6 @@ case "$target" in
   cassandra) exec podman exec -it devcli-cassandra cqlsh -k devcli ;;
   redis) exec podman exec -it devcli-redis redis-cli ;;
   sqlite) exec sqlite3 "$SQLITE_DB" ;;
-  *) fail "usage: scripts/sql-console.sh mysql|postgres|cassandra|redis|sqlite" ;;
+  prometheus) exec "$BIN" -prometheus "${2:-up}" ;;
+  *) fail "usage: scripts/sql-console.sh mysql|postgres|cassandra|redis|sqlite|prometheus" ;;
 esac

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diegopacheco/dev-cli/internal/jvm"
@@ -30,7 +31,7 @@ type Threads struct {
 	dumpPID     int
 	dumpLang    jvm.Language
 	stateFilter int
-	visible     bool
+	visible     atomic.Bool
 	loop        bool
 }
 
@@ -68,20 +69,20 @@ func (t *Threads) Title() string                { return "Threads" }
 func (t *Threads) Root() tview.Primitive        { return t }
 func (t *Threads) FocusTarget() tview.Primitive { return t.table }
 func (t *Threads) Typing() bool                 { return t.filter.HasFocus() }
-func (t *Threads) Hide()                        { t.visible = false }
+func (t *Threads) Hide()                        { t.visible.Store(false) }
 func (t *Threads) Hints() string {
 	return "Enter dump · Tab focus dump · / filter threads · s state filter · r refresh jvms"
 }
 
 func (t *Threads) Show() {
-	t.visible = true
+	t.visible.Store(true)
 	if t.loop {
 		return
 	}
 	t.loop = true
 	go func() {
 		for {
-			if t.visible {
+			if t.visible.Load() {
 				t.Discover()
 			}
 			time.Sleep(5 * time.Second)
@@ -214,9 +215,12 @@ func (t *Threads) render() {
 		t.dumpView.SetText(colored(theme.Dim, "\n  select a JVM and press Enter to take a thread dump"))
 		return
 	}
+	t.dumpView.SetText(RenderDump(t.dumpLang, t.dumpPID, t.dump, stateFilters[t.stateFilter], t.matches))
+}
+
+func RenderDump(lang jvm.Language, pid int, d jvm.Dump, state string, match func(jvm.Thread) bool) string {
 	var b strings.Builder
-	d := t.dump
-	b.WriteString(colored(langColor(t.dumpLang), fmt.Sprintf(" ◆ %s ", t.dumpLang)) + colored(theme.Dim, fmt.Sprintf(" pid %d · ", t.dumpPID)) + colored(theme.Text, d.Header) + "\n ")
+	b.WriteString(colored(langColor(lang), fmt.Sprintf(" ◆ %s ", lang)) + colored(theme.Dim, fmt.Sprintf(" pid %d · ", pid)) + colored(theme.Text, d.Header) + "\n ")
 	counts := d.Counts()
 	states := make([]string, 0, len(counts))
 	for s := range counts {
@@ -227,7 +231,7 @@ func (t *Threads) render() {
 	for _, s := range states {
 		b.WriteString("  " + colored(threadStateColor(s), fmt.Sprintf("● %s %d", s, counts[s])))
 	}
-	if sf := stateFilters[t.stateFilter]; sf != "" {
+	if sf := state; sf != "" {
 		b.WriteString(colored(theme.Magenta, "   filter: "+sf))
 	}
 	b.WriteString("\n")
@@ -242,7 +246,7 @@ func (t *Threads) render() {
 	}
 	shown := 0
 	for _, th := range d.Threads {
-		if !t.matches(th) {
+		if !match(th) {
 			continue
 		}
 		shown++
@@ -270,13 +274,13 @@ func (t *Threads) render() {
 			if jvm.IsRuntimeFrame(f.Text) {
 				color = theme.Dim
 			}
-			b.WriteString(colored(theme.Border, "    at ") + colored(color, jvm.Demangle(t.dumpLang, f.Text)) + "\n")
+			b.WriteString(colored(theme.Border, "    at ") + colored(color, jvm.Demangle(lang, f.Text)) + "\n")
 		}
 	}
 	if shown == 0 {
 		b.WriteString(colored(theme.Dim, "\n  no threads match the filter\n"))
 	}
-	t.dumpView.SetText(b.String())
+	return b.String()
 }
 
 func (t *Threads) keys(event *tcell.EventKey) *tcell.EventKey {
