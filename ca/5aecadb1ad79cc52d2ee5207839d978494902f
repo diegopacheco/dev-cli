@@ -1,0 +1,170 @@
+internal/backend/cassandra.go
+  s_503d2792ee92e1::t_765704af3b3fd1 1-143
+design-doc.md
+  s_503d2792ee92e1::t_b304d6e5982f52 193
+  s_503d2792ee92e1::t_82efb048656f05 1-2,4-64,66-137,141-149,151-179,181-182,184-189,191-192,194-213,220-223,225-248,250,255-371,373-443,449-457
+  s_503d2792ee92e1::t_a0048f29fdaa56 65,138-140,150,372
+  s_503d2792ee92e1::t_6a2d04907a112b 3,180,183,190,214-219,224,249,251-254,444-448
+internal/sys/run.go
+  s_503d2792ee92e1::t_5ae93d814d012c 1-40
+internal/syntax/syntax_test.go
+  s_503d2792ee92e1::t_17080d5fe63a0e 1-43,54-108,116-130
+  s_503d2792ee92e1::t_ed053ea3525009 44-53,109-115
+scripts/test-all.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-23
+infra/jvm/DevcliJvm.java
+  s_503d2792ee92e1::t_46298111f590cd 1-51
+internal/ui/draw.go
+  s_503d2792ee92e1::t_b36edd4d278b56 1-71,74,76,78-82,87-124
+  s_503d2792ee92e1::t_40f807b53629bb 72-73,75,77,83-86
+scripts/common.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-118
+internal/ui/containers.go
+  s_503d2792ee92e1::t_12b39b712f1c33 1-6,9-84,88-135,137-216
+  s_503d2792ee92e1::t_40f807b53629bb 7-8,85-87,136
+internal/backend/redis.go
+  s_503d2792ee92e1::t_765704af3b3fd1 1-5,7-310
+  s_503d2792ee92e1::t_8520e299aa6646 6
+internal/backend/loki.go
+  s_503d2792ee92e1::t_d635160f9a45e9 1-158,160-162,164-166,169-225
+  s_503d2792ee92e1::t_40f807b53629bb 159,163,167-168
+infra/postgres/init.sql
+  s_503d2792ee92e1::t_46298111f590cd 1-24
+infra/grafana/provisioning/dashboards/devcli.yml
+  s_503d2792ee92e1::t_46298111f590cd 1-7
+internal/theme/theme.go
+  s_503d2792ee92e1::t_a82809353b4b45 1-53
+internal/backend/backend_test.go
+  s_503d2792ee92e1::t_40f807b53629bb 218-220
+  s_503d2792ee92e1::t_43f97ce7a6c697 1-217,221-288
+internal/jvm/jvm_test.go
+  s_503d2792ee92e1::t_0f7bc8df79c73a 1-142
+main.go
+  s_503d2792ee92e1::t_57f21047bb0fb4 1-49
+internal/syntax/json.go
+  s_503d2792ee92e1::t_a82809353b4b45 1-227,232-251,299-300
+  s_503d2792ee92e1::t_ed053ea3525009 228-231,252-298
+infra/grafana/dashboards/devcli-logs.json
+  s_503d2792ee92e1::t_46298111f590cd 1-26
+infra/mysql/init.sql
+  s_503d2792ee92e1::t_46298111f590cd 1-25
+internal/backend/http.go
+  s_503d2792ee92e1::t_d635160f9a45e9 1-113
+internal/syntax/languages.go
+  s_503d2792ee92e1::t_afc16cc44880db 46,57,67,76,86
+  s_503d2792ee92e1::t_2598805f7e1cf4 1-45,47-56,58-66,68-75,77-85,87
+internal/ui/threads.go
+  s_503d2792ee92e1::t_822f19a24e519b 1-297
+internal/ui/processes.go
+  s_503d2792ee92e1::t_12b39b712f1c33 1-196
+assets/logo.svg
+  s_503d2792ee92e1::t_4a2cc047804ea2 1-18,20-21
+  s_503d2792ee92e1::t_92d3e08b61c1cd 19
+internal/jvm/jvm.go
+  s_503d2792ee92e1::t_0f7bc8df79c73a 1-275
+internal/syntax/complete.go
+  s_503d2792ee92e1::t_a82809353b4b45 1-73
+.gitignore
+  s_503d2792ee92e1::t_46298111f590cd 33-35
+internal/ui/list.go
+  s_503d2792ee92e1::t_12b39b712f1c33 1-44
+podman-compose.yml
+  s_503d2792ee92e1::t_46298111f590cd 1-56
+assets/architecture.svg
+  s_503d2792ee92e1::t_92d3e08b61c1cd 54
+  s_503d2792ee92e1::t_4a2cc047804ea2 1-53,55-84
+internal/ui/capture.go
+  s_503d2792ee92e1::t_011f778f2a28f2 1-30,32-187
+  s_503d2792ee92e1::t_71cbc56002acba 31
+infra/loki/seed.sh
+  s_503d2792ee92e1::t_b643a8feafa18f 1-22
+internal/sys/metrics.go
+  s_503d2792ee92e1::t_5ae93d814d012c 1-255
+internal/backend/grafana.go
+  s_503d2792ee92e1::t_d635160f9a45e9 1-203
+go.mod
+  s_503d2792ee92e1::t_fcaf27b3bdb74b 1-5,16-26
+  s_503d2792ee92e1::t_b36edd4d278b56 6-15
+internal/ui/dashboard.go
+  s_503d2792ee92e1::t_71cbc56002acba 63
+  s_503d2792ee92e1::t_8bb003071abc00 1-62,64-309
+internal/sys/sys_test.go
+  s_503d2792ee92e1::t_ea460111535340 1-147
+internal/jvm/integration_test.go
+  s_503d2792ee92e1::t_d49ab4b5f9339a 1-61
+internal/ui/app.go
+  s_503d2792ee92e1::t_57f21047bb0fb4 1-278
+scripts/stop-all.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-16
+infra/cassandra/init.cql
+  s_503d2792ee92e1::t_46298111f590cd 1-4,6-8
+  s_503d2792ee92e1::t_cfcd13069ddff7 5
+  s_503d2792ee92e1::t_ddc0e754ce4423 9-11
+internal/backend/sql.go
+  s_503d2792ee92e1::t_a6a7e4771852c2 1-221
+scripts/setup.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-23
+scripts/ui.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-6
+infra/grafana/provisioning/datasources/loki.yml
+  s_503d2792ee92e1::t_46298111f590cd 1-8
+internal/sys/container.go
+  s_503d2792ee92e1::t_5ae93d814d012c 1-139
+internal/ui/console.go
+  s_503d2792ee92e1::t_3bd712b64e0f54 1-16,22,37-118,121,124-263,265-274
+  s_503d2792ee92e1::t_40f807b53629bb 17-21,23-36,119-120,122-123,264
+README.md
+  s_503d2792ee92e1::t_4a2ac9e1325ce7 1-226
+infra/sqlite/init.sql
+  s_503d2792ee92e1::t_46298111f590cd 1-24
+internal/backend/integration_test.go
+  s_503d2792ee92e1::t_d49ab4b5f9339a 1-128
+scripts/sql-console.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-13
+internal/ui/results.go
+  s_503d2792ee92e1::t_40f807b53629bb 42,48-49,162-218
+  s_503d2792ee92e1::t_3dfb863e64cff9 1-41,43-47,50-161,219
+scripts/start-all.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-12,14-40
+  s_503d2792ee92e1::t_d6ddcca2a677d0 13
+internal/ui/ui_test.go
+  s_503d2792ee92e1::t_d49ab4b5f9339a 48-49
+  s_503d2792ee92e1::t_aa8b835adbf9bf 91-92,115
+  s_503d2792ee92e1::t_d0ec626a48810a 1-47,50-90,93-114,116-210
+infra/redis/seed.redis
+  s_503d2792ee92e1::t_46298111f590cd 2-8
+  s_503d2792ee92e1::t_ddc0e754ce4423 1
+internal/backend/backend.go
+  s_503d2792ee92e1::t_a6a7e4771852c2 1-21,28-31,33-111
+  s_503d2792ee92e1::t_40f807b53629bb 22-27,32
+internal/sys/process.go
+  s_503d2792ee92e1::t_5ae93d814d012c 1-113
+scripts/ports.env
+  s_503d2792ee92e1::t_46298111f590cd 1-6
+internal/syntax/lexer.go
+  s_503d2792ee92e1::t_fb322587879a30 1-36,39-113,115-120,122,124-200
+  s_503d2792ee92e1::t_afc16cc44880db 37-38,114,123
+  s_503d2792ee92e1::t_ed053ea3525009 121
+internal/ui/editor.go
+  s_503d2792ee92e1::t_ce5d157f68fb8f 1-444
+scripts/status.sh
+  s_503d2792ee92e1::t_ddc0e754ce4423 1-21
+go.sum
+  s_503d2792ee92e1::t_2a93b9bdbda00f 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca5aecadb1ad79cc52d2ee5207839d978494902f",
+  "prompts": {},
+  "sessions": {
+    "s_503d2792ee92e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c426b35a-f92d-4f7b-a951-aaf524d01d8e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "diegopacheco <diego.pacheco.it@gmail.com>"
+    }
+  }
+}
