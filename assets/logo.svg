@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="200" viewBox="0 0 720 200">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00e5ff"/>
+      <stop offset="0.55" stop-color="#bd93f9"/>
+      <stop offset="1" stop-color="#ff4fd8"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="712" height="192" rx="26" fill="#0b0f1a" stroke="#2a3355" stroke-width="3"/>
+  <circle cx="40" cy="32" r="7" fill="#ff5c7a"/>
+  <circle cx="62" cy="32" r="7" fill="#ffe66d"/>
+  <circle cx="84" cy="32" r="7" fill="#a6ff4d"/>
+  <path d="M112 62 L78 116 L104 116 L92 160 L140 96 L112 96 L128 62 Z" fill="url(#g)" filter="url(#glow)"/>
+  <text x="170" y="132" font-family="Menlo, 'SF Mono', Consolas, monospace" font-size="92" font-weight="700" fill="url(#g)" filter="url(#glow)">devcli</text>
+  <text x="174" y="172" font-family="Menlo, 'SF Mono', Consolas, monospace" font-size="17" fill="#6b7394">sql · cql · redis · loki · grafana · jvm · btop</text>
+  <rect x="540" y="104" width="22" height="34" fill="#a6ff4d"><animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/></rect>
+</svg>

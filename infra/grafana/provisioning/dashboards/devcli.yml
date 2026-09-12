@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: devcli
+    folder: devcli
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

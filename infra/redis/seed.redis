@@ -1,0 +1,8 @@
+DEL queue:jobs leaderboard features
+SET user:1 "{\"name\":\"Ana Ribeiro\",\"lang\":\"go\",\"level\":9,\"tags\":[\"tui\",\"sql\"]}"
+SET user:2 "{\"name\":\"Lars Holm\",\"lang\":\"rust\",\"level\":7,\"tags\":[\"cli\"]}"
+HSET session:9f2c user_id 1 ip 10.0.0.7 agent devcli
+RPUSH queue:jobs "{\"job\":\"reindex\",\"attempt\":1}" "{\"job\":\"backup\",\"attempt\":3}"
+ZADD leaderboard 980 ana 870 mei 640 lars
+SADD features dashboard threads containers consoles
+SET counter:requests 1284

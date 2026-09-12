@@ -1,0 +1,11 @@
+CREATE KEYSPACE IF NOT EXISTS devcli WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+USE devcli;
+CREATE TABLE IF NOT EXISTS users (id int PRIMARY KEY, name text, email text, tags set<text>, profile text);
+CREATE TABLE IF NOT EXISTS events (user_id int, ts timeuuid, kind text, payload text, PRIMARY KEY (user_id, ts)) WITH CLUSTERING ORDER BY (ts DESC);
+TRUNCATE events;
+INSERT INTO users (id, name, email, tags, profile) VALUES (1, 'Ana Ribeiro', 'ana@devcli.io', {'tui','sql'}, '{"lang":"go","level":9}');
+INSERT INTO users (id, name, email, tags, profile) VALUES (2, 'Lars Holm', 'lars@devcli.io', {'cli'}, '{"lang":"rust","level":7}');
+INSERT INTO users (id, name, email, tags, profile) VALUES (3, 'Mei Tanaka', 'mei@devcli.io', {'jvm'}, '{"lang":"scala","level":8}');
+INSERT INTO events (user_id, ts, kind, payload) VALUES (1, e6a1a4f0-9000-11ef-8000-000000000001, 'login', '{"ip":"10.0.0.7","mfa":true}');
+INSERT INTO events (user_id, ts, kind, payload) VALUES (1, e6a1a4f0-9001-11ef-8000-000000000002, 'query', '{"db":"postgres","ms":12}');
+INSERT INTO events (user_id, ts, kind, payload) VALUES (2, e6a1a4f0-9002-11ef-8000-000000000003, 'login', '{"ip":"10.0.0.9","mfa":false}');

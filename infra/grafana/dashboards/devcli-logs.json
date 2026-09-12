@@ -1,0 +1,26 @@
+{
+  "uid": "devcli-logs",
+  "title": "devcli logs",
+  "tags": ["devcli", "loki"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "API logs",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 12},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "{app=\"api\"}"}]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Errors per minute",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "sum by (app) (count_over_time({level=\"error\"}[1m]))"}]
+    }
+  ]
+}

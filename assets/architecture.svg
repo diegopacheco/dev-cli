@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860">
+  <defs>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&amp;display=swap'); text{font-family:'Caveat',cursive;fill:#1e2235}</style>
+    <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="7"/><feDisplacementMap in="SourceGraphic" scale="4"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3b4060"/></marker>
+  </defs>
+  <rect width="1400" height="860" fill="#fdfcf7"/>
+  <text x="700" y="58" font-size="46" font-weight="700" text-anchor="middle">devcli architecture</text>
+
+  <g filter="url(#wobble)" stroke="#3b4060" stroke-width="2.5">
+    <rect x="60" y="100" width="1280" height="190" rx="18" fill="#e3f2fd"/>
+    <rect x="100" y="165" width="200" height="90" rx="14" fill="#fff9c4"/>
+    <rect x="330" y="165" width="200" height="90" rx="14" fill="#fff9c4"/>
+    <rect x="560" y="165" width="200" height="90" rx="14" fill="#fff9c4"/>
+    <rect x="790" y="165" width="200" height="90" rx="14" fill="#fff9c4"/>
+    <rect x="1020" y="165" width="280" height="90" rx="14" fill="#fce4ec"/>
+
+    <rect x="60" y="380" width="290" height="170" rx="18" fill="#e8f5e9"/>
+    <rect x="390" y="380" width="290" height="170" rx="18" fill="#fff3e0"/>
+    <rect x="720" y="380" width="290" height="170" rx="18" fill="#f3e5f5"/>
+    <rect x="1050" y="380" width="290" height="170" rx="18" fill="#e0f7fa"/>
+
+    <rect x="60" y="650" width="290" height="150" rx="18" fill="#f1f8e9"/>
+    <rect x="390" y="650" width="290" height="150" rx="18" fill="#fbe9e7"/>
+    <rect x="720" y="650" width="620" height="150" rx="18" fill="#ede7f6"/>
+  </g>
+
+  <text x="90" y="140" font-size="32" font-weight="700">internal/ui · one tview event loop</text>
+  <text x="820" y="140" font-size="24">workers → QueueUpdateDraw</text>
+  <text x="200" y="205" font-size="30" font-weight="700" text-anchor="middle">Dashboard</text>
+  <text x="200" y="238" font-size="22" text-anchor="middle">braille graphs, meters</text>
+  <text x="430" y="205" font-size="30" font-weight="700" text-anchor="middle">Processes</text>
+  <text x="430" y="238" font-size="22" text-anchor="middle">filter, sort, kill</text>
+  <text x="660" y="205" font-size="30" font-weight="700" text-anchor="middle">Containers</text>
+  <text x="660" y="238" font-size="22" text-anchor="middle">stop, shell, kill, rm</text>
+  <text x="890" y="205" font-size="30" font-weight="700" text-anchor="middle">Threads</text>
+  <text x="890" y="238" font-size="22" text-anchor="middle">jcmd dumps</text>
+  <text x="1160" y="205" font-size="30" font-weight="700" text-anchor="middle">Console ×7</text>
+  <text x="1160" y="238" font-size="22" text-anchor="middle">Editor + popup + results</text>
+
+  <text x="205" y="420" font-size="32" font-weight="700" text-anchor="middle">internal/sys</text>
+  <text x="205" y="458" font-size="23" text-anchor="middle">top stream + netstat + ioreg</text>
+  <text x="205" y="490" font-size="23" text-anchor="middle">ps parser, signal guard</text>
+  <text x="205" y="522" font-size="23" text-anchor="middle">podman / docker JSON</text>
+
+  <text x="535" y="420" font-size="32" font-weight="700" text-anchor="middle">internal/jvm</text>
+  <text x="535" y="458" font-size="23" text-anchor="middle">discover + language detect</text>
+  <text x="535" y="490" font-size="23" text-anchor="middle">Thread.print parser</text>
+  <text x="535" y="522" font-size="23" text-anchor="middle">Clojure/Scala/Kotlin demangle</text>
+
+  <text x="865" y="420" font-size="32" font-weight="700" text-anchor="middle">internal/backend</text>
+  <text x="865" y="458" font-size="23" text-anchor="middle">Backend interface · Result</text>
+  <text x="865" y="490" font-size="23" text-anchor="middle">database/sql · gocql</text>
+  <text x="865" y="522" font-size="21" text-anchor="middle">RESP2 · Loki · Grafana HTTP</text>
+
+  <text x="1195" y="420" font-size="32" font-weight="700" text-anchor="middle">internal/syntax</text>
+  <text x="1195" y="458" font-size="23" text-anchor="middle">lexer per language</text>
+  <text x="1195" y="490" font-size="23" text-anchor="middle">prefix completion</text>
+  <text x="1195" y="522" font-size="23" text-anchor="middle">ordered, colored JSON</text>
+
+  <text x="205" y="695" font-size="32" font-weight="700" text-anchor="middle">macOS + Podman</text>
+  <text x="205" y="733" font-size="23" text-anchor="middle">top, ps, df, sysctl</text>
+  <text x="205" y="765" font-size="23" text-anchor="middle">podman ps / exec / rm</text>
+
+  <text x="535" y="695" font-size="32" font-weight="700" text-anchor="middle">local JVMs</text>
+  <text x="535" y="733" font-size="23" text-anchor="middle">Java · Scala · Kotlin · Clojure</text>
+  <text x="535" y="765" font-size="23" text-anchor="middle">jcmd PID Thread.print -l</text>
+
+  <text x="1030" y="695" font-size="32" font-weight="700" text-anchor="middle">data stores and observability</text>
+  <text x="1030" y="733" font-size="23" text-anchor="middle">MySQL · Postgres · SQLite · Cassandra · Redis</text>
+  <text x="1030" y="765" font-size="23" text-anchor="middle">Loki /loki/api/v1 · Grafana /api</text>
+
+  <g stroke="#3b4060" stroke-width="3" fill="none" marker-end="url(#arrow)">
+    <path d="M200 255 L200 378"/>
+    <path d="M430 255 C430 320 260 320 240 378"/>
+    <path d="M660 255 C660 330 300 330 290 378"/>
+    <path d="M890 255 L600 378"/>
+    <path d="M1110 255 L900 378"/>
+    <path d="M1210 255 L1195 378"/>
+    <path d="M205 550 L205 648"/>
+    <path d="M535 550 L535 648"/>
+    <path d="M865 550 L960 648"/>
+  </g>
+</svg>
