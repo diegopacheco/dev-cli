@@ -330,3 +330,171 @@ func TestPrometheusInstantRangeAndTargets(t *testing.T) {
 		t.Fatalf("metric and label names must complete, got %v", words)
 	}
 }
+
+func titles(results []Result) []string {
+	var out []string
+	for _, r := range results {
+		out = append(out, r.Title)
+	}
+	return out
+}
+
+func find(results []Result, title string) Result {
+	for _, r := range results {
+		if r.Title == title {
+			return r
+		}
+	}
+	return Result{}
+}
+
+func column(r Result, i int) []string {
+	var out []string
+	for _, row := range r.Rows {
+		out = append(out, syntax.Scalar(row[i]))
+	}
+	return out
+}
+
+func TestPrometheusAllListsEverythingAndReadyQueriesUseRealMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/status/buildinfo":
+			w.Write([]byte(`{"data":{}}`))
+		case "/api/v1/metadata":
+			w.Write([]byte(`{"data":{"deprecated_flags_inuse_total":[{"type":"counter","help":"old"}],"http_requests_total":[{"type":"counter","help":"requests"}],"queue_depth":[{"type":"gauge","help":"depth"}]}}`))
+		case "/api/v1/labels":
+			w.Write([]byte(`{"data":["__name__","job"]}`))
+		case "/api/v1/label/job/values":
+			w.Write([]byte(`{"data":["api","worker"]}`))
+		case "/api/v1/targets":
+			w.Write([]byte(`{"data":{"activeTargets":[{"labels":{"job":"api","instance":"api:80"},"health":"up"}]}}`))
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	p := NewPrometheus(srv.URL)
+	p.Connect(ctx, srv.URL)
+	res, err := p.Execute(ctx, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(titles(res), ",") != "commands,ready queries,metrics,labels,targets,functions" {
+		t.Fatalf("got sections %v", titles(res))
+	}
+	ready := strings.Join(column(find(res, "ready queries"), 0), "\n")
+	if !strings.Contains(ready, "rate(http_requests_total[1m])") || strings.Contains(ready, "deprecated") {
+		t.Fatalf("ready queries must use a meaningful live metric, got %s", ready)
+	}
+	if !strings.Contains(strings.Join(column(find(res, "labels"), 1), " "), "api, worker") {
+		t.Fatal("labels must preview their values")
+	}
+	if !find(res, "ready queries").Wide {
+		t.Fatal("ready queries must not be truncated or they cannot be copied")
+	}
+}
+
+func TestBareFunctionNameExplainsUsageInsteadOfQuerying(t *testing.T) {
+	queried := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "query") {
+			queried = true
+		}
+		w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	p := NewPrometheus(srv.URL)
+	p.Connect(ctx, srv.URL)
+	l := NewLoki(srv.URL)
+	l.Connect(ctx, srv.URL)
+	for _, b := range []Backend{p, l} {
+		res, err := b.Execute(ctx, "avg_over_time")
+		if err != nil || len(res) != 1 || !strings.Contains(syntax.Scalar(res[0].Rows[0][1]), "avg_over_time(") {
+			t.Fatalf("%s: typing a function name must show how to call it, got %+v %v", b.Name(), res, err)
+		}
+	}
+	if queried {
+		t.Fatal("a bare function name is not a query and must not be sent to the server")
+	}
+}
+
+func TestLokiAllBuildsReadyQueriesFromLiveLabels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/loki/api/v1/labels":
+			w.Write([]byte(`{"data":["app","level"]}`))
+		case "/loki/api/v1/label/app/values":
+			w.Write([]byte(`{"data":["checkout","web"]}`))
+		case "/loki/api/v1/label/level/values":
+			w.Write([]byte(`{"data":["error","info"]}`))
+		case "/loki/api/v1/series":
+			if len(r.URL.Query()["match[]"]) != 2 {
+				http.Error(w, "need a matcher per label", 400)
+				return
+			}
+			w.Write([]byte(`{"data":[{"app":"checkout","level":"error"},{"app":"web","level":"info"}]}`))
+		default:
+			http.Error(w, "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER", 400)
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	l := NewLoki(srv.URL)
+	l.Connect(ctx, srv.URL)
+	res, err := l.Execute(ctx, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(titles(res), ",") != "commands,ready queries,labels,streams,pipeline stages,functions" {
+		t.Fatalf("got %v", titles(res))
+	}
+	ready := column(find(res, "ready queries"), 0)
+	if len(ready) == 0 || ready[0] != `{app="checkout"}` {
+		t.Fatalf("the first ready query must select a real stream, got %v", ready)
+	}
+	if len(find(res, "streams").Rows) != 2 {
+		t.Fatal("streams must be listed")
+	}
+	_, err = l.Execute(ctx, "checkout errors")
+	if err == nil || !strings.Contains(err.Error(), "run all") || !strings.Contains(err.Error(), "syntax error") {
+		t.Fatalf("a parse error must keep Loki's message and point to all, got %v", err)
+	}
+}
+
+func TestGrafanaAllListsServerObjectsAndReadyCommands(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			w.Write([]byte(`{"database":"ok","version":"12.0.0"}`))
+		case "/api/search":
+			w.Write([]byte(`[{"type":"dash-db","uid":"svc-overview","title":"Service overview"}]`))
+		case "/api/datasources":
+			w.Write([]byte(`[{"uid":"logs","name":"Logs","type":"loki"},{"uid":"metrics","name":"Metrics","type":"prometheus"}]`))
+		case "/api/folders":
+			w.Write([]byte(`[{"uid":"f1","title":"Team"}]`))
+		case "/api/v1/provisioning/alert-rules":
+			http.Error(w, "forbidden", 403)
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	g := NewGrafana(srv.URL, "")
+	g.Connect(ctx, srv.URL)
+	res, err := g.Execute(ctx, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(titles(res), ",") != "commands,ready commands,health,datasources,folders,dashboards,alert rules" {
+		t.Fatalf("got %v", titles(res))
+	}
+	ready := strings.Join(column(find(res, "ready commands"), 0), "\n")
+	for _, want := range []string{"query logs {service_name=", "query metrics up", "dashboard svc-overview"} {
+		if !strings.Contains(ready, want) {
+			t.Errorf("ready commands must be built from the server's own datasources and dashboards, missing %q in %s", want, ready)
+		}
+	}
+	if !strings.Contains(find(res, "alert rules").Message, "unavailable") {
+		t.Fatal("a section the token cannot read must say so instead of failing the whole listing")
+	}
+}

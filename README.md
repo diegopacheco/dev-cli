@@ -47,10 +47,20 @@ The [SVG source](assets/architecture.svg) uses the Caveat font, a wobble filter,
 - **Threads:** JVMs tagged Java, Scala, Kotlin or Clojure; state colors, a deadlock banner, and frame names that read like source code.
 - **MySQL / Postgres / SQLite / Cassandra:** multi-statement queries, `Enter` runs once the statement ends with `;`. Completion knows live tables and columns.
 - **Redis:** any command. JSON values pretty print, hashes render as objects, keys complete.
+- **`all` in Loki, Grafana and Prometheus:** type `all` and press Enter to see everything the connected server offers:
+  - the commands of that console;
+  - ready queries built from the server's own labels, metrics, datasources and dashboards. They are printed full width, and `Cmd-K` lists them so `Enter` loads one into the editor;
+  - Loki: labels with their values, streams, pipeline stages and functions;
+  - Grafana: health, datasources, folders, dashboards and alert rules;
+  - Prometheus: metrics with type and help, labels, targets and functions.
+
+  Typing a bare function name such as `avg_over_time` shows how to call it instead of an empty result or a parse error.
 - **Loki:** LogQL with `labels`, `values`, `:range` and `:limit`, and a colored log view.
 - **Grafana:** `search`, `dashboard`, `datasources`, `alerts`, `query DS EXPR`, `get /api/...`.
 - **Prometheus:** PromQL instant or `:range` queries, `metrics`, `labels`, `values`, `targets`, `alerts`, `rules`. Metric names complete.
-- **Sample data:** `scripts/sample-all.sh start|stop` starts and fills every data store, and runs two JVMs.
+- **Java 25 sample:** `sample/java25` is a real multi-threaded app to thread dump, run with `scripts/sample-java.sh start|dump|stop`.
+- **Sample data:** `scripts/sample-all.sh start|stop` starts and fills every data store, and runs the Java 25 sample and a Clojure JVM.
+- **macOS install:** `scripts/install-macos.sh` builds and installs one `devcli` into `~/.local/bin`; `scripts/uninstall-macos.sh` removes it.
 
 ## Stack
 
@@ -157,7 +167,7 @@ Backends talk to these server APIs:
 
 ## How to run the app/tests
 
-Requirements: macOS, Go 1.26, Podman with `podman-compose`, a JDK (`java`, `jcmd`), `clojure`, `sqlite3`, `curl`.
+Requirements: macOS, Go 1.26, Podman with `podman-compose`, JDK 25 (`java`, `jcmd`), `clojure`, `sqlite3`, `curl`.
 
 ```bash
 ./scripts/setup.sh
@@ -166,6 +176,47 @@ Requirements: macOS, Go 1.26, Podman with `podman-compose`, a JDK (`java`, `jcmd
 ./scripts/test-all.sh
 ./scripts/sample-all.sh stop
 ```
+
+Install the binary on your PATH:
+
+```bash
+./scripts/install-macos.sh
+devcli --help
+./scripts/uninstall-macos.sh
+```
+
+Each step of `install-macos.sh`, and why:
+1. Runs `uninstall-macos.sh` first, so only one version is ever installed.
+2. Rebuilds `bin/devcli` and copies it into `~/.local/bin`, or `DEVCLI_INSTALL_DIR`. The copy goes through a temporary file and a rename, so macOS never runs a half-written, invalidly signed binary.
+3. Checks that the installed binary runs.
+4. Adds the directory to `~/.zshrc` (or `~/.bash_profile`) only when it is not already on `PATH`.
+5. Warns when another `devcli` on `PATH` would shadow it.
+
+`uninstall-macos.sh` stops running `devcli` processes and removes the binary, and it is safe to run twice.
+
+### Java 25 thread dump sample
+
+`sample/java25/src` is a multi-file Java 25 program: no build tool, launched with `java sample/java25/src/DevcliJvm.java`. It uses compact source files with `void main()`, `import module`, `IO.println`, `ScopedValue`, records, sealed interfaces and pattern-matching `switch`. Its threads are always doing something worth dumping:
+
+| Threads | State in a dump | What they do |
+|---|---|---|
+| `order-producer`, `order-worker-1..4` | TIMED_WAITING, WAITING (parking), RUNNABLE | a producer fills a `BlockingQueue`; workers take orders and hash paid orders inside a `ScopedValue` |
+| `ledger-writer`, `inventory-writer` | BLOCKED, deadlocked | two `synchronized` monitors taken in opposite order |
+| `payment-capture`, `payment-refund` | WAITING (parking), deadlocked | two `ReentrantLock`s taken in opposite order |
+| `report-exporter`, `report-reader-1..3` | RUNNABLE, BLOCKED | one thread holds a monitor for 1.5 s while readers pile up |
+| `cpu-hasher` | RUNNABLE | burns about half a core computing SHA-256 |
+| `cache-refresher`, `event-listener` | TIMED_WAITING, WAITING (on object monitor) | a scheduler refreshes a cache and `notifyAll`s a waiting listener |
+| `HTTP-Dispatcher`, `stats-poller`, `HttpClient-*` | RUNNABLE | a JDK `HttpServer` on an ephemeral loopback port, polled with `HttpClient` every 250 ms |
+| `ForkJoinPool-1-worker-*` | WAITING (parking) | carrier threads of 500 virtual threads |
+
+```bash
+./scripts/sample-java.sh start
+./scripts/sample-java.sh dump
+./scripts/sample-java.sh status
+./scripts/sample-java.sh stop
+```
+
+`start` requires Java 25 or newer, and waits until the app has started its threads. `dump` prints the colored dump through `devcli -threads`, or `jcmd` when the binary is not built. The dump shows both deadlocks, and the parser flags all four threads, including the `ReentrantLock` pair.
 
 `sample-all.sh start` starts the containers and waits until each one answers a real query. It then loads sample data (safe to run again):
 
@@ -177,7 +228,7 @@ Requirements: macOS, Go 1.26, Podman with `podman-compose`, a JDK (`java`, `jcmd
 | SQLite | `.run/devcli.db` with hosts and 100 latency samples |
 | Loki | api, worker and web log lines |
 | Prometheus | scrapes itself, Loki and Grafana |
-| JVMs | a Java program with a deliberate deadlock and a Clojure loop |
+| JVMs | the Java 25 sample (`scripts/sample-java.sh`) and a Clojure loop |
 
 `test-all.sh` runs these steps:
 1. `bash -n` on every script.
@@ -222,7 +273,7 @@ Running containers first, with state dots, published ports and status. `Enter` o
 
 ### 5. Threads
 
-The JVM list shows the Java deadlock sample and the Clojure loop, with language badges. The dump shows per-state counts, a red `DEADLOCK` banner naming both threads, lock lines in orange, JDK frames dimmed and application frames bright.
+The JVM list shows the Java 25 sample and the Clojure loop, with language badges. The dump shows per-state counts and a red `DEADLOCK` banner with both deadlocks: the monitor pair and the `ReentrantLock` pair. Deadlocked threads are marked `☠`, lock lines are orange, JDK frames dimmed and application frames bright.
 
 ![Threads](printscreens/05-threads.png)
 
@@ -264,13 +315,13 @@ Every `env="dev"` stream except cache hits, merged newest first. Levels are colo
 
 ### 12. Grafana
 
-`dashboard devcli-logs` lists the provisioned panels with type, title, datasource and expression.
+`all` lists the Grafana commands first, then ready commands built from this server (`query loki …`, `query prometheus up`, `dashboard devcli-logs`). Health, datasources, folders, dashboards and alert rules follow.
 
 ![Grafana](printscreens/12-grafana.png)
 
 ### 13. Prometheus
 
-A PromQL aggregation per job and the `targets` command showing Prometheus, Loki and Grafana scraped and healthy.
+`all` lists the Prometheus commands first, then ready queries built from live metrics (also in `Cmd-K`, where `Enter` loads one): `up`, a counter rate, a gauge average and a histogram p95. Every metric with its type and help, the labels with their values, the scrape targets and the PromQL functions follow; scroll the results pane with `PgUp`/`PgDn`.
 
 ![Prometheus](printscreens/13-prometheus.png)
 
@@ -301,6 +352,9 @@ All scripts live in `scripts/` and run from any directory of the repository.
 | `./scripts/setup.sh` | Checks tools, downloads Go modules, builds `bin/devcli`, pulls images |
 | `./scripts/sample-all.sh start` | Starts every container, waits for each service, loads sample data, starts the sample JVMs |
 | `./scripts/sample-all.sh stop` | Stops the sample JVMs and every container |
+| `./scripts/sample-java.sh start\|stop\|status\|dump` | Runs the Java 25 thread dump sample, reports it, dumps it, stops it |
+| `./scripts/install-macos.sh` | Uninstalls any previous copy, rebuilds, installs `devcli` into `~/.local/bin` |
+| `./scripts/uninstall-macos.sh` | Removes the installed `devcli` |
 | `./scripts/start-all.sh` | Checks the binary and runs `sample-all.sh start` |
 | `./scripts/status.sh` | Shows every service port as UP or DOWN, plus the sample JVMs |
 | `./scripts/test-all.sh` | Runs bash checks, vet, race-enabled unit tests and integration tests |

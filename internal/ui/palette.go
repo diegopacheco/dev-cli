@@ -42,6 +42,7 @@ var kindColors = map[string]string{
 	"tab":       theme.Cyan,
 	"action":    theme.Magenta,
 	"connect":   theme.Lime,
+	"ready":     theme.Orange,
 	"container": theme.Blue,
 	"jvm":       theme.Orange,
 	"process":   theme.Purple,
@@ -51,6 +52,7 @@ var kindColors = map[string]string{
 var kindWeights = map[string]int{
 	"tab":       60,
 	"connect":   50,
+	"ready":     45,
 	"action":    40,
 	"container": 30,
 	"jvm":       30,

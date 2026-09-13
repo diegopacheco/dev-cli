@@ -410,3 +410,51 @@ func TestPaletteRanksNavigationAboveNoise(t *testing.T) {
 		t.Fatalf("tabs and connect actions are what a user navigates to, got order %+v", hits)
 	}
 }
+
+func TestObservabilityConsolesOfferTheAllCatalog(t *testing.T) {
+	a := testApp()
+	for name, want := range map[string]bool{"Loki": true, "Grafana": true, "Prometheus": true, "Postgres": false} {
+		c, i := a.console(name)
+		if c.HasCatalog() != want {
+			t.Fatalf("%s catalog = %v", name, c.HasCatalog())
+		}
+		a.Switch(i)
+		a.OpenPalette()
+		a.Palette.SetQuery("list everything")
+		hits := a.Palette.Hits()
+		found := len(hits) > 0 && hits[0].Title == "List everything available (all)"
+		if found != want {
+			t.Fatalf("%s: palette all action present = %v", name, found)
+		}
+		a.closeOverlay("palette")
+	}
+}
+
+func TestReadyQueriesFromAllLoadIntoTheEditorFromThePalette(t *testing.T) {
+	a := testApp()
+	c, i := a.console("Prometheus")
+	a.Switch(i)
+	c.runDone([]backend.Result{{Title: "ready queries", Columns: []string{"query", "what it shows"}, Rows: [][]any{{"sum by (job) (up)", "healthy targets per job"}}}}, nil, 0)
+	a.OpenPalette()
+	hits := a.Palette.Hits()
+	var ready *PaletteItem
+	for k := range hits {
+		if hits[k].Kind == "ready" {
+			ready = &hits[k]
+		}
+	}
+	if ready == nil || ready.Title != "sum by (job) (up)" {
+		t.Fatalf("after all, the current console's ready queries must be in the empty palette, got %+v", hits)
+	}
+	a.Switch(0)
+	a.OpenPalette()
+	a.Palette.SetQuery("healthy targets")
+	hits = a.Palette.Hits()
+	if len(hits) == 0 || hits[0].Kind != "ready" {
+		t.Fatalf("ready queries must be searchable by what they show, got %+v", hits)
+	}
+	a.Palette.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if a.current != i || c.editor.Text() != "sum by (job) (up)" {
+		t.Fatalf("Enter must load the query into its console, got tab %d text %q", a.current, c.editor.Text())
+	}
+}

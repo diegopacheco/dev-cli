@@ -40,7 +40,7 @@ func (g *Grafana) Connect(ctx context.Context, target string) error {
 	return nil
 }
 
-const grafanaHelp = "commands: health | search [text] | dashboard <uid> | datasources | folders | alerts | annotations | query <datasource-uid> <expr> | get </api/path>"
+const grafanaHelp = "commands: all | health | search [text] | dashboard <uid> | datasources | folders | alerts | annotations | query <datasource-uid> <expr> | get </api/path>"
 
 func (g *Grafana) Execute(ctx context.Context, input string) ([]Result, error) {
 	if g.api == nil {
@@ -49,6 +49,14 @@ func (g *Grafana) Execute(ctx context.Context, input string) ([]Result, error) {
 	var results []Result
 	for _, line := range Lines(input) {
 		start := time.Now()
+		if strings.EqualFold(line, "all") {
+			all, err := g.all(ctx)
+			if err != nil {
+				return results, fmt.Errorf("all: %w", err)
+			}
+			results = append(results, all...)
+			continue
+		}
 		r, err := g.run(ctx, line)
 		if err != nil {
 			return results, fmt.Errorf("%s: %w", line, err)
@@ -116,6 +124,65 @@ func (g *Grafana) run(ctx context.Context, line string) (Result, error) {
 		return Result{Message: grafanaHelp}, nil
 	}
 	return Result{}, errors.New(grafanaHelp)
+}
+
+var grafanaCommands = [][2]string{
+	{"all", "list commands, ready commands, health, datasources, folders, dashboards and alert rules"},
+	{"health", "server version and database state"},
+	{"search [text]", "dashboards and folders"},
+	{"dashboard <uid>", "panels of a dashboard with their queries; Ctrl-T for the full JSON"},
+	{"datasources", "configured datasources"},
+	{"folders", "dashboard folders"},
+	{"alerts", "provisioned alert rules"},
+	{"annotations", "latest 50 annotations"},
+	{"query <datasource-uid> <expr>", "run an expression through a datasource (last hour)"},
+	{"get /api/<path>", "any GET endpoint of the Grafana HTTP API"},
+}
+
+func (g *Grafana) all(ctx context.Context) ([]Result, error) {
+	health, err := g.run(ctx, "health")
+	if err != nil {
+		return nil, err
+	}
+	health.Title = "health"
+	out := []Result{commandResult("commands", grafanaCommands)}
+	ready := Result{Title: "ready commands", Columns: []string{"command", "what it shows"}, Wide: true}
+	sections := []struct{ title, command string }{
+		{"datasources", "datasources"},
+		{"folders", "folders"},
+		{"dashboards", "search"},
+		{"alert rules", "alerts"},
+	}
+	var parts []Result
+	for _, s := range sections {
+		r, err := g.run(ctx, s.command)
+		if err != nil {
+			r = Result{Message: "unavailable: " + err.Error()}
+		}
+		r.Title = s.title
+		parts = append(parts, r)
+		switch s.command {
+		case "datasources":
+			for _, row := range r.Rows {
+				uid, kind := str(row[0]), str(row[2])
+				switch kind {
+				case "loki":
+					ready.Rows = append(ready.Rows, []any{"query " + uid + ` {service_name=~".+"}`, "log lines through the " + str(row[1]) + " datasource"})
+				case "prometheus":
+					ready.Rows = append(ready.Rows, []any{"query " + uid + " up", "scrape health through the " + str(row[1]) + " datasource"})
+				}
+			}
+		case "search":
+			for _, row := range r.Rows {
+				if str(row[0]) == "dash-db" && len(ready.Rows) < 8 {
+					ready.Rows = append(ready.Rows, []any{"dashboard " + str(row[1]), "panels of " + str(row[2])})
+				}
+			}
+		}
+	}
+	ready.Message = "⌘K then type ready to load one into the editor"
+	out = append(out, ready, health)
+	return append(out, parts...), nil
 }
 
 func table(v any, err error, columns []string) (Result, error) {
@@ -188,7 +255,7 @@ func (g *Grafana) Words(ctx context.Context) []string {
 	if g.api == nil {
 		return nil
 	}
-	out := []string{"health", "search", "dashboard", "datasources", "folders", "alerts", "annotations", "query", "get", "/api/health", "/api/search", "/api/datasources", "/api/folders", "/api/org", "/api/users"}
+	out := []string{"all", "health", "search", "dashboard", "datasources", "folders", "alerts", "annotations", "query", "get", "/api/health", "/api/search", "/api/datasources", "/api/folders", "/api/org", "/api/users"}
 	if v, err := g.api.do(ctx, "GET", "/api/search", nil, nil); err == nil {
 		for _, item := range list(v) {
 			out = append(out, str(field(item, "uid")))

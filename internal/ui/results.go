@@ -62,7 +62,7 @@ func renderResult(b *strings.Builder, r backend.Result, asJSON, withHeader bool)
 	case asJSON && r.Columns != nil:
 		b.WriteString(syntax.Pretty(rowsAsObjects(r)) + "\n")
 	case r.Columns != nil:
-		b.WriteString(Table(r.Columns, r.Rows))
+		b.WriteString(table(r.Columns, r.Rows, cellLimit(r.Wide)))
 	case r.Value != nil:
 		b.WriteString(syntax.Pretty(r.Value) + "\n")
 	}
@@ -107,7 +107,18 @@ func cellColor(v any) string {
 	return theme.Purple
 }
 
+func cellLimit(wide bool) int {
+	if wide {
+		return 400
+	}
+	return maxCellWidth
+}
+
 func Table(columns []string, rows [][]any) string {
+	return table(columns, rows, maxCellWidth)
+}
+
+func table(columns []string, rows [][]any, maxCellWidth int) string {
 	widths := make([]int, len(columns))
 	cells := make([][]string, len(rows))
 	for i, c := range columns {

@@ -44,6 +44,7 @@ var shortcutGroups = []ShortcutGroup{
 		{"F5", "reload completion words"},
 		{"PgUp / PgDn", "scroll results"},
 		{"Esc", "cancel a running query"},
+		{"all + Enter", "Loki, Grafana, Prometheus: list everything"},
 	}},
 	{"Processes", "☰", theme.Purple, []Shortcut{
 		{"/", "filter by text or pid"},

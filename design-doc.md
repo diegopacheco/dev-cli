@@ -235,9 +235,36 @@ type Result struct {
 | SQLite | same | `sqlite_master` names and `pragma table_info` columns | buffer ends with `;` |
 | Cassandra | split on `;`, `session.Query(...).Iter()` with `MapScan`, 1000 row cap | `system_schema.keyspaces/tables/columns` | buffer ends with `;` |
 | Redis | tokenize with quotes, send RESP array | command names + up to 1000 keys from `SCAN` | always |
-| Loki | `labels`, `values <label>`, `:range 30m`, `:limit 100`, otherwise LogQL via `query_range` | label names and values | always |
-| Prometheus | `:range 30m` / `:range off`, `:step 15s`, `metrics [text]`, `labels`, `values <label>`, `targets`, `alerts`, `rules`, otherwise PromQL via `query` or `query_range` (step = range/120) | commands, metric names, label names | always |
-| Grafana | `health`, `search [q]`, `dashboard <uid>`, `datasources`, `folders`, `alerts`, `annotations`, `query <ds-uid> <expr>`, `get <path>` | commands, dashboard uids, datasource uids | always |
+| Loki | `all`, `labels`, `values <label>`, `:range 30m`, `:limit 100`, otherwise LogQL via `query_range` | commands, label names and values | always |
+| Prometheus | `all`, `:range 30m` / `:range off`, `:step 15s`, `metrics [text]`, `labels`, `values <label>`, `targets`, `alerts`, `rules`, otherwise PromQL via `query` or `query_range` (step = range/120) | commands, metric names, label names | always |
+| Grafana | `all`, `health`, `search [q]`, `dashboard <uid>`, `datasources`, `folders`, `alerts`, `annotations`, `query <ds-uid> <expr>`, `get <path>` | commands, dashboard uids, datasource uids | always |
+
+#### The `all` catalog
+
+A new user types a function name like `avg_over_time` and gets either 0 series (Prometheus reads it as a metric
+name) or `parse error … unexpected IDENTIFIER` (Loki). `all` answers "what can I type here" from the live server, as
+several results, each rendered as its own table:
+
+| Console | Sections |
+|---|---|
+| Loki | commands · ready queries · labels with up to 10 values · streams (`/loki/api/v1/series` with one `match[]` per label) · pipeline stages · functions |
+| Grafana | commands · ready commands · health · datasources · folders · dashboards · alert rules |
+| Prometheus | commands · ready queries · metrics with type and help (`/api/v1/metadata`) · labels with up to 8 values · targets · functions |
+
+- **Ready queries come from the server, not a fixed list.**
+  - Loki picks a real `app`, `service_name`, `job` or `container` value, and adds a per-level count when `level` exists.
+  - Grafana writes `query <uid> …` for each Loki and Prometheus datasource, plus `dashboard <uid>` for each dashboard.
+  - Prometheus picks a counter, a gauge and a histogram, preferring well-known names over alphabetical noise.
+- **Wide tables.** Command, ready-query and function tables set `Result.Wide`, so cells are not cut at 48 characters.
+- **Loading ready queries.** The TUI takes over the mouse, which makes copying awkward. Each console keeps the rows of its last `ready` section, and the Cmd-K palette lists them (kind `ready`, weight 45). `Enter` loads one into the editor.
+- **Partial access.** A section the credentials cannot read shows `unavailable: …` instead of failing the whole listing.
+- **Bare function names.** A function name alone returns its usage row without querying the server.
+- **Loki parse errors** keep the server message and add a pointer to a stream selector and `all`.
+- **0 series.** A Prometheus query with no series says so and points to `all`.
+- **Discoverability.**
+  - After connecting, the three consoles say "type all and press Enter".
+  - The palette has a "List everything available (all)" action for them.
+  - `all` completes and highlights as a keyword.
 
 ### 4.3 Syntax highlighting
 
@@ -418,6 +445,7 @@ A custom tview primitive drawn as a centered overlay page, with no library behin
 | tab | every tab | switch |
 | action | shortcuts, discover, refresh lists, quit; for the current console run, table/JSON, reload words, clear, reconnect | run it |
 | connect | discovered containers | retarget that console and switch to it |
+| ready | ready queries from the last `all` of each console; the current console's show even with an empty query | switch and load the query into the editor |
 | container | Containers list | switch and select the row |
 | jvm | Threads list | switch, select, dump |
 | process | Processes list, or the dashboard sample before that tab opened | switch and filter to the pid |
@@ -428,7 +456,7 @@ Scoring (`ui.Fuzzy`) splits the query into tokens, and every token must match th
 - **Substring match:** scores higher, with bonuses for a match at the start or at a word start.
 - **Subsequence match:** scores per letter, with bonuses for word starts and consecutive letters.
 - **Title matches** count double, and matched title letters are underlined.
-- **Kind weight:** tab 60, connect 50, action 40, container and jvm 30, words 15, history 10, process 0. Navigation
+- **Kind weight:** tab 60, connect 50, ready 45, action 40, container and jvm 30, words 15, history 10, process 0. Navigation
   targets rank above completion noise.
 - **Limit:** the list keeps the top 200.
 
@@ -520,8 +548,28 @@ every seed on each run. The seeds drop and recreate their tables, so running sta
 - **SQLite:** 100 latency samples.
 
 `stop` stops the sample JVMs and the containers and waits for every port to close.
-A small Java program in `infra/jvm/` runs a few named threads (one pair deadlocked) so the Threads tab and its
-integration test have a real JVM to dump.
+
+### 8.1 Java 25 thread dump sample
+
+`sample/java25/src` is a multi-file source program (JEP 458), launched with `java sample/java25/src/DevcliJvm.java`,
+so there is no build tool. `DevcliJvm.java` is a compact source file with `void main()`. The other files use
+`import module`, `ScopedValue`, records, a sealed `Order` hierarchy and pattern-matching `switch`, all final in
+Java 25.
+
+| File | Threads | Dump shows |
+|---|---|---|
+| `Orders.java` | `order-producer`, `order-worker-1..4` | queue producer and consumers; `ScopedValue.where(...).run` frames; SHA-256 CPU work |
+| `Deadlocks.java` | `ledger-writer` + `inventory-writer`, `payment-capture` + `payment-refund` | a monitor deadlock and a `ReentrantLock` deadlock |
+| `Contention.java` | `report-exporter`, `report-reader-1..3` | BLOCKED readers behind a holder, not a deadlock |
+| `Background.java` | `cpu-hasher`, `cache-refresher`, `event-listener`, virtual thread carriers | RUNNABLE CPU work, scheduled TIMED_WAITING, `Object.wait` |
+| `HttpTraffic.java` | `HTTP-Dispatcher`, `stats-poller`, `HttpClient-*` | JDK `HttpServer` on an ephemeral loopback port and an `HttpClient` poller |
+
+`scripts/sample-java.sh start` checks that `java` is 25 or newer. It then waits for `jcmd` to attach and for the
+app's own "sample running" line: `jcmd` answers while the launcher is still compiling, before any thread exists.
+
+The sample exposed a parser bug. jcmd prints one "Found one Java-level deadlock" report per deadlock, and the parser
+stopped after the first, so the `ReentrantLock` pair was never marked. It also missed the plural total
+"Found 2 deadlocks.". Both are fixed and covered by a test built from the real output.
 
 ## 9. Testing
 
@@ -563,7 +611,24 @@ shortcuts open and that `Ctrl-Q` exits.
 `scripts/` follows the scripts skill: `ports.env`, `common.sh`, `setup.sh` (Go deps, build `bin/devcli`, pull
 images), `sample-all.sh start|stop` (compose up, wait for services, load every seed and start the JVM samples; or
 stop everything), `start-all.sh` / `stop-all.sh` (delegate to `sample-all.sh`), `status.sh`, `test-all.sh` (vet, unit, integration), `ui.sh` (launch the TUI with the
-local env), `sql-console.sh` (native console in a container: `mysql`, `postgres`, `cassandra`, `redis`).
+local env), `sql-console.sh` (native console in a container: `mysql`, `postgres`, `cassandra`, `redis`, `sqlite`,
+`prometheus`), `sample-java.sh start|stop|status|dump` (Java 25 sample, §8.1).
+
+`install-macos.sh` and `uninstall-macos.sh` put exactly one `devcli` on the user's PATH:
+
+| Step | Rule |
+|---|---|
+| Location | `${DEVCLI_INSTALL_DIR:-$HOME/.local/bin}/devcli` |
+| One version | install always runs uninstall first, then rebuilds from source |
+| Copy | to `devcli.tmp`, `chmod 0755`, then `mv`; an in-place overwrite of a signed arm64 binary can get it killed by macOS |
+| Check | the installed binary must answer `-version` |
+| PATH | when the directory is not on `PATH`, append one `export PATH=...` line to `~/.zshrc` (`~/.bash_profile` for bash), never twice |
+| Shadowing | warn when another `devcli` elsewhere on `PATH` is not managed by the script; never delete it |
+| Uninstall | stop running `devcli`, remove the binary and any `.tmp`; running it twice is fine |
+
+Both scripts were verified against a throwaway `HOME` and install directory: a first install adds the PATH line, a
+second install keeps one line and one binary, an install into a directory already on PATH leaves the rc file
+alone, and a second uninstall still exits 0.
 
 ## 11. Build order
 
@@ -599,6 +664,10 @@ local env), `sql-console.sh` (native console in a container: `mysql`, `postgres`
 | 18 | Banner stream | stderr for one-shot runs so stdout is pipe-safe; stdout for `--help` |
 | 19 | Seeds | Applied by `sample-all.sh` through `podman exec` on every start instead of `docker-entrypoint-initdb.d`, so data reloads without recreating containers |
 | 20 | Ctrl-Q | Handled before overlays so quitting always works |
+| 21 | Discoverability of Loki, Grafana, Prometheus | An `all` catalog from the live server, function usage for bare function names, hints on parse errors and empty results |
+| 22 | Ready queries | Built from real labels, metrics and datasources; wide tables so they are never truncated |
+| 23 | JVM sample | One Java 25 multi-file source app in `sample/java25` replaces the single-file `infra/jvm` program |
+| 24 | Install location | `~/.local/bin`, uninstall before install, atomic rename, PATH line only when missing |
 
 ## 13. Not in scope
 

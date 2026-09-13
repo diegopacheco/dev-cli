@@ -3,11 +3,13 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/diegopacheco/dev-cli/internal/backend"
+	"github.com/diegopacheco/dev-cli/internal/syntax"
 	"github.com/diegopacheco/dev-cli/internal/theme"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -37,6 +39,7 @@ type Console struct {
 	info       *tview.TextView
 	body       *responsive
 	focus      func(tview.Primitive)
+	ready      [][2]string
 }
 
 type responsive struct {
@@ -190,6 +193,23 @@ func (c *Console) Connected() bool { return c.connected }
 func (c *Console) Editor() *Editor { return c.editor }
 func (c *Console) ToggleJSON()     { c.asJSON = !c.asJSON; c.render() }
 func (c *Console) ReloadWords()    { c.loadWords() }
+func (c *Console) HasCatalog() bool {
+	switch c.backend.Language().Name {
+	case "logql", "promql", "grafana":
+		return true
+	}
+	return false
+}
+
+func (c *Console) Ready() [][2]string {
+	return c.ready
+}
+
+func (c *Console) RunAll() {
+	c.editor.SetText("all")
+	c.editor.run()
+}
+
 func (c *Console) SetTarget(t string) {
 	c.target = t
 	c.Connect()
@@ -231,7 +251,11 @@ func (c *Console) connectDone(err error, words []string) {
 		c.setInfo(theme.Red, "✖ "+err.Error()+"  (Ctrl-E to edit the connection)")
 	} else {
 		c.editor.SetWords(words)
-		c.setInfo(theme.Lime, fmt.Sprintf("● connected · %d completion words loaded", len(words)))
+		hint := ""
+		if c.HasCatalog() {
+			hint = " · type all and press Enter to list everything available"
+		}
+		c.setInfo(theme.Lime, fmt.Sprintf("● connected · %d completion words loaded%s", len(words), hint))
 	}
 	c.renderConn()
 }
@@ -281,6 +305,16 @@ func (c *Console) Run(text string) {
 func (c *Console) runDone(results []backend.Result, err error, elapsed time.Duration) {
 	c.running = false
 	c.results, c.err = results, err
+	for _, r := range results {
+		if strings.HasPrefix(r.Title, "ready ") {
+			c.ready = c.ready[:0]
+			for _, row := range r.Rows {
+				if len(row) >= 2 {
+					c.ready = append(c.ready, [2]string{syntax.Scalar(row[0]), syntax.Scalar(row[1])})
+				}
+			}
+		}
+	}
 	c.render()
 	c.output.ScrollToBeginning()
 	if err != nil {

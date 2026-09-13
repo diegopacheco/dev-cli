@@ -32,8 +32,8 @@ var captureQueries = map[string]captureStep{
 	"Cassandra":  {query: "SELECT id, name, email, tags, profile\nFROM devcli.users;"},
 	"Redis":      {query: "GET user:1\nHGETALL session:9f2c\nZRANGE leaderboard 0 -1 WITHSCORES"},
 	"Loki":       {query: `{env="dev"} != "cache hit"`},
-	"Grafana":    {query: "dashboard devcli-logs"},
-	"Prometheus": {query: "sum by (job) (scrape_samples_scraped)\ntargets"},
+	"Grafana":    {query: "all"},
+	"Prometheus": {query: "all"},
 }
 
 func Capture(targets Targets, dir string) error {

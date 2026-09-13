@@ -31,6 +31,7 @@ type Result struct {
 	Rows    [][]any
 	Logs    []LogLine
 	Text    string
+	Wide    bool
 	Value   any
 	Message string
 	Elapsed time.Duration

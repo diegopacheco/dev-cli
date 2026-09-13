@@ -474,10 +474,30 @@ func (a *App) PaletteItems(query string) []PaletteItem {
 			PaletteItem{Kind: "action", Title: "Clear editor", Detail: c.Title() + " · Ctrl-L", Run: func() { c.editor.SetText("") }},
 			PaletteItem{Kind: "action", Title: "Reconnect", Detail: MaskTarget(c.Target()), Run: c.Connect},
 		)
+		if c.HasCatalog() {
+			actions = append(actions, PaletteItem{Kind: "action", Title: "List everything available (all)", Detail: c.Title() + " · all", Run: c.RunAll})
+		}
 	}
 	items = append(items, actions...)
+	readyItems := func(i int, c *Console) {
+		for _, r := range c.Ready() {
+			r := r
+			items = append(items, PaletteItem{Kind: "ready", Title: r[0], Detail: c.Title() + " · " + r[1], Run: func() {
+				a.Switch(i)
+				c.editor.SetText(r[0])
+			}})
+		}
+	}
+	if current != nil {
+		readyItems(a.current, current)
+	}
 	if strings.TrimSpace(query) == "" {
 		return items
+	}
+	for i, t := range a.tabs {
+		if c, ok := t.(*Console); ok && c != current {
+			readyItems(i, c)
+		}
 	}
 	for _, f := range a.found {
 		f := f
