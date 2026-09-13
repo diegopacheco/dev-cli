@@ -1,0 +1,76 @@
+internal/cli/help.go
+  s_503d2792ee92e1::t_ce6789e7b93402 32-34,65
+internal/ui/console.go
+  s_503d2792ee92e1::t_ce6789e7b93402 196-203,208-212,254-258
+  s_503d2792ee92e1::t_d2ef1b0db973f3 6,12,42,204-207,308-317
+internal/ui/capture.go
+  s_503d2792ee92e1::t_b26a304068b3e5 35-36
+internal/ui/ui_test.go
+  s_503d2792ee92e1::t_ce6789e7b93402 413-431
+  s_503d2792ee92e1::t_d2ef1b0db973f3 432-460
+internal/backend/prometheus.go
+  s_503d2792ee92e1::t_3d38115586eb2c 8,46,55-66,176-239,241-243,246,249,252,254-261,268
+  s_503d2792ee92e1::t_ccb9d7c0189de3 240,244-245,247-248,250-251
+  s_503d2792ee92e1::t_d2ef1b0db973f3 253
+internal/ui/shortcuts.go
+  s_503d2792ee92e1::t_ce6789e7b93402 47
+design-doc.md
+  s_503d2792ee92e1::t_48e182dab3977d 551-572
+  s_503d2792ee92e1::t_dbe7e7ac3e2c5a 240-257,260-267
+  s_503d2792ee92e1::t_dbd94148dcd9c5 258-259,448,459
+  s_503d2792ee92e1::t_e9ba3afb7a218b 667-670
+  s_503d2792ee92e1::t_aa98e34889faa6 238-239
+  s_503d2792ee92e1::t_455b78144d8369 614-631
+internal/backend/backend_test.go
+  s_503d2792ee92e1::t_ce6789e7b93402 333-500
+internal/backend/loki.go
+  s_503d2792ee92e1::t_ccb9d7c0189de3 154
+  s_503d2792ee92e1::t_d2ef1b0db973f3 177
+  s_503d2792ee92e1::t_474212e8d2efd1 56-61,94-96,106-153,155-176,178-187,309
+internal/backend/grafana.go
+  s_503d2792ee92e1::t_ccb9d7c0189de3 149-170
+  s_503d2792ee92e1::t_d2ef1b0db973f3 183
+  s_503d2792ee92e1::t_b67cd6f162821b 43,52-59,129-148,171-182,184-187,258
+README.md
+  s_503d2792ee92e1::t_fd83fdac36bd77 50-51,53-57,61-63
+  s_503d2792ee92e1::t_a8e0d71daac991 355-357
+  s_503d2792ee92e1::t_c0628852dd34c7 170,180-219
+  s_503d2792ee92e1::t_a797cfc136f620 231
+  s_503d2792ee92e1::t_3edce4d0fdf542 276
+  s_503d2792ee92e1::t_c71fb00c78e19d 318
+  s_503d2792ee92e1::t_dbd94148dcd9c5 52,324
+  s_503d2792ee92e1::t_af0d08347b3567 220
+internal/ui/results.go
+  s_503d2792ee92e1::t_ccb9d7c0189de3 65,110-116,118-121
+internal/backend/catalog.go
+  s_503d2792ee92e1::t_85419c142ff417 1-105,107-114,116-136,138-156,173
+  s_503d2792ee92e1::t_ccb9d7c0189de3 106,115,137,157-172
+internal/ui/app.go
+  s_503d2792ee92e1::t_ce6789e7b93402 477-479
+  s_503d2792ee92e1::t_d2ef1b0db973f3 482-493,497-501
+internal/backend/backend.go
+  s_503d2792ee92e1::t_ccb9d7c0189de3 34
+internal/cli/integration_test.go
+  s_503d2792ee92e1::t_528414bdca53d4 57
+  s_503d2792ee92e1::t_b26a304068b3e5 56,58-59
+internal/ui/palette.go
+  s_503d2792ee92e1::t_d2ef1b0db973f3 45,55
+internal/syntax/languages.go
+  s_503d2792ee92e1::t_8451dd4a256575 32,38,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0389c0b6ecd81388a7b659fb17b74dc1c89d36ea",
+  "prompts": {},
+  "sessions": {
+    "s_503d2792ee92e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c426b35a-f92d-4f7b-a951-aaf524d01d8e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "diegopacheco <diego.pacheco.it@gmail.com>"
+    }
+  }
+}
