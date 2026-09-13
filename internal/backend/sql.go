@@ -22,6 +22,7 @@ type SQL struct {
 	target   string
 	dsn      func(string) (string, error)
 	wordsSQL string
+	catalog  sqlCatalog
 	db       *sql.DB
 }
 
@@ -29,6 +30,7 @@ func NewMySQL(target string) *SQL {
 	return &SQL{
 		name:     "MySQL",
 		driver:   "mysql",
+		catalog:  mysqlCatalog,
 		target:   target,
 		dsn:      mysqlDSN,
 		wordsSQL: "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = DATABASE()",
@@ -39,6 +41,7 @@ func NewPostgres(target string) *SQL {
 	return &SQL{
 		name:     "Postgres",
 		driver:   "postgres",
+		catalog:  postgresCatalog,
 		target:   target,
 		dsn:      func(s string) (string, error) { return s, nil },
 		wordsSQL: "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('pg_catalog', 'information_schema')",
@@ -49,6 +52,7 @@ func NewSQLite(target string) *SQL {
 	return &SQL{
 		name:     "SQLite",
 		driver:   "sqlite3",
+		catalog:  sqliteCatalog,
 		target:   target,
 		dsn:      func(s string) (string, error) { return s, nil },
 		wordsSQL: "SELECT m.name, p.name FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type IN ('table', 'view')",
@@ -72,7 +76,7 @@ func mysqlDSN(target string) (string, error) {
 func (s *SQL) Name() string                  { return s.name }
 func (s *SQL) Language() syntax.Language     { return syntax.SQL }
 func (s *SQL) DefaultTarget() string         { return s.target }
-func (s *SQL) RunsOnEnter(input string) bool { return EndsWithSemicolon(input) }
+func (s *SQL) RunsOnEnter(input string) bool { return EndsWithSemicolon(input) || isAll(input) }
 
 func (s *SQL) Connect(ctx context.Context, target string) error {
 	s.Close()
@@ -117,6 +121,10 @@ func (s *SQL) Execute(ctx context.Context, input string) ([]Result, error) {
 	}
 	var results []Result
 	for _, stmt := range SplitStatements(input) {
+		if isAll(stmt) {
+			results = append(results, s.all(ctx)...)
+			continue
+		}
 		start := time.Now()
 		var r Result
 		var err error

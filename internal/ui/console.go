@@ -35,11 +35,25 @@ type Console struct {
 	connEdit   *tview.InputField
 	connPages  *tview.Pages
 	editor     *Editor
-	output     *tview.TextView
+	output     *resultsView
 	info       *tview.TextView
 	body       *responsive
 	focus      func(tview.Primitive)
 	ready      [][2]string
+}
+
+type resultsView struct {
+	*tview.TextView
+	width    int
+	onResize func()
+}
+
+func (v *resultsView) Draw(screen tcell.Screen) {
+	if _, _, w, _ := v.GetInnerRect(); w != v.width {
+		v.width = w
+		v.onResize()
+	}
+	v.TextView.Draw(screen)
 }
 
 type responsive struct {
@@ -99,7 +113,7 @@ func NewConsole(title string, b backend.Backend, queue func(func()), focus func(
 	c.editor.onRun = c.Run
 	c.editor.SetInputCapture(c.capture)
 
-	c.output = tview.NewTextView().SetDynamicColors(true).SetWrap(false).SetScrollable(true)
+	c.output = &resultsView{TextView: tview.NewTextView().SetDynamicColors(true).SetWrap(false).SetScrollable(true), onResize: c.redrawCharts}
 	panelBox(c.output.Box, " ◆ results · table ", theme.Lime)
 	c.output.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape || event.Key() == tcell.KeyTab {
@@ -195,7 +209,7 @@ func (c *Console) ToggleJSON()     { c.asJSON = !c.asJSON; c.render() }
 func (c *Console) ReloadWords()    { c.loadWords() }
 func (c *Console) HasCatalog() bool {
 	switch c.backend.Language().Name {
-	case "logql", "promql", "grafana":
+	case "sql", "cql", "logql", "promql", "grafana":
 		return true
 	}
 	return false
@@ -330,5 +344,14 @@ func (c *Console) render() {
 		mode = "json"
 	}
 	c.output.SetTitle(" ◆ results · " + mode + " ")
-	c.output.SetText(RenderResults(c.results, c.err, c.asJSON))
+	c.output.SetText(RenderResults(c.results, c.err, c.asJSON, c.output.width))
+}
+
+func (c *Console) redrawCharts() {
+	for _, r := range c.results {
+		if r.Chart != nil {
+			c.render()
+			return
+		}
+	}
 }

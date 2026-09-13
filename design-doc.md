@@ -39,6 +39,8 @@ that renders tables or pretty, colored JSON.
 | One-shot mode | `-sql --postgres`, `--sqlite`, `-redis`, `-loki`, `-grafana`, `-prometheus`, `-cassandra`, `-ps`, `-containers`, `-threads`, `-discover`, `--help` | §7 |
 | Prometheus | Eighth console and one-shot mode | §4.2 |
 | Sample data | `scripts/sample-all.sh start` / `stop` starts and fills every data store | §8, §10 |
+| `all` for databases | MySQL, Postgres, SQLite and Cassandra list their objects, commands, ready queries and functions | §4.2 |
+| Grafana charts | `chart <uid> [panel]` draws dashboard panels in the terminal | §4.2 |
 
 ## 2. Assumptions
 
@@ -191,7 +193,11 @@ internal/backend/sql.go     database/sql backends: mysql, postgres, sqlite
 internal/backend/cassandra.go
 internal/backend/redis.go   RESP2 client + backend
 internal/backend/loki.go
-internal/backend/grafana.go
+internal/backend/grafana.go  Grafana commands, chart panels through /api/ds/query
+internal/backend/catalog.go  function catalogs shared by all
+internal/backend/sqlcatalog.go  all sections, commands and functions for MySQL, Postgres, SQLite
+internal/backend/chart.go   Grafana frames → series, log lines and tables; chart interval
+internal/ui/chart.go        braille line charts, big-digit stats, gauges, value units
 internal/syntax/lexer.go    tokenizer with per-language rules
 internal/syntax/json.go     pretty JSON into colored segments
 internal/syntax/complete.go prefix completion, ranking
@@ -217,27 +223,43 @@ type Result struct {
     Rows    [][]any
     Logs    []LogLine
     Text    string
+    Wide    bool
+    Chart   *Chart
     Value   any
     Message string
     Elapsed time.Duration
 }
+
+type Chart struct {
+    Kind   string
+    Unit   string
+    Max    float64
+    Series []Series
+}
+
+type Series struct {
+    Name   string
+    Times  []int64
+    Values []float64
+    Step   int64
+}
 ```
 
-- `Columns/Rows` render as a table. `Logs` render as a colored log view (time, level, labels, JSON line). `Value` is any JSON-able value (Redis replies, Loki streams, Grafana JSON).
+- `Chart` renders as a chart (table view only; JSON view shows the raw frames). `Columns/Rows` render as a table. `Logs` render as a colored log view (time, level, labels, JSON line). `Value` is any JSON-able value (Redis replies, Loki streams, Grafana JSON).
 - `Ctrl-T` toggles **table** and **JSON** views. In JSON view rows become objects; a string cell that parses as
   JSON is embedded as JSON so nested documents are pretty printed and colored.
 - `Words` is called after connecting and on `F5`, and feeds the completer.
 
 | Backend | Execute | Words (live) | Enter runs when |
 |---|---|---|---|
-| MySQL | split on `;` outside quotes, `QueryContext` per statement | `information_schema` tables and columns of the current schema | buffer ends with `;` |
-| Postgres | same | `information_schema` tables and columns outside `pg_catalog` | buffer ends with `;` |
-| SQLite | same | `sqlite_master` names and `pragma table_info` columns | buffer ends with `;` |
-| Cassandra | split on `;`, `session.Query(...).Iter()` with `MapScan`, 1000 row cap | `system_schema.keyspaces/tables/columns` | buffer ends with `;` |
+| MySQL | `all`, otherwise split on `;` outside quotes, `QueryContext` per statement | `information_schema` tables and columns of the current schema | buffer ends with `;`, or is `all` |
+| Postgres | same | `information_schema` tables and columns outside `pg_catalog` | buffer ends with `;`, or is `all` |
+| SQLite | same | `sqlite_master` names and `pragma table_info` columns | buffer ends with `;`, or is `all` |
+| Cassandra | `all`, otherwise split on `;`, `session.Query(...).Iter()` with `MapScan`, 1000 row cap | `system_schema.keyspaces/tables/columns` | buffer ends with `;`, or is `all` |
 | Redis | tokenize with quotes, send RESP array | command names + up to 1000 keys from `SCAN` | always |
 | Loki | `all`, `labels`, `values <label>`, `:range 30m`, `:limit 100`, otherwise LogQL via `query_range` | commands, label names and values | always |
 | Prometheus | `all`, `:range 30m` / `:range off`, `:step 15s`, `metrics [text]`, `labels`, `values <label>`, `targets`, `alerts`, `rules`, otherwise PromQL via `query` or `query_range` (step = range/120) | commands, metric names, label names | always |
-| Grafana | `all`, `health`, `search [q]`, `dashboard <uid>`, `datasources`, `folders`, `alerts`, `annotations`, `query <ds-uid> <expr>`, `get <path>` | commands, dashboard uids, datasource uids | always |
+| Grafana | `all`, `health`, `search [q]`, `dashboard <uid>`, `chart <uid> [panel]`, `datasources`, `folders`, `alerts`, `annotations`, `query <ds-uid> <expr>`, `get <path>` | commands, dashboard uids, datasource uids | always |
 
 #### The `all` catalog
 
@@ -247,13 +269,19 @@ several results, each rendered as its own table:
 
 | Console | Sections |
 |---|---|
+| Postgres | commands · ready queries · server · databases · schemas · tables (kind, estimated rows, size) · columns · indexes · constraints · sequences · routines · triggers · extensions · roles · sessions · functions |
+| MySQL | commands · ready queries · server · databases · tables (engine, estimated rows, size) · columns · indexes · constraints · routines · triggers · events · users · sessions (`performance_schema.processlist`) · functions |
+| SQLite | commands · ready queries · server · databases (`pragma_database_list`) · tables and views · columns · indexes · foreign keys · triggers · pragmas (`pragma_pragma_list`) · functions |
+| Cassandra | commands · ready queries · cluster (`system.local`) · peers · keyspaces · tables · columns · indexes · materialized views · user types · user functions · aggregates · virtual tables (`system_virtual_schema.tables`) · CQL functions |
 | Loki | commands · ready queries · labels with up to 10 values · streams (`/loki/api/v1/series` with one `match[]` per label) · pipeline stages · functions |
 | Grafana | commands · ready commands · health · datasources · folders · dashboards · alert rules |
 | Prometheus | commands · ready queries · metrics with type and help (`/api/v1/metadata`) · labels with up to 8 values · targets · functions |
 
 - **Ready queries come from the server, not a fixed list.**
+  - MySQL, Postgres and SQLite write `SELECT * FROM <table> LIMIT 10;` and the dialect's describe (`DESCRIBE`, `pg_attribute … ::regclass`, `PRAGMA table_info`) for up to 8 tables. Names that are not plain lowercase identifiers are quoted.
+  - Cassandra writes `SELECT * FROM <keyspace.table> LIMIT 10;` and `DESCRIBE TABLE` for up to 8 user tables. `system*` keyspaces are left out of tables, columns, indexes, views, types, functions and aggregates, but listed under keyspaces and virtual tables.
   - Loki picks a real `app`, `service_name`, `job` or `container` value, and adds a per-level count when `level` exists.
-  - Grafana writes `query <uid> …` for each Loki and Prometheus datasource, plus `dashboard <uid>` for each dashboard.
+  - Grafana writes `query <uid> …` for each Loki and Prometheus datasource, plus `chart <uid>` and `dashboard <uid>` for each dashboard.
   - Prometheus picks a counter, a gauge and a histogram, preferring well-known names over alphabetical noise.
 - **Wide tables.** Command, ready-query and function tables set `Result.Wide`, so cells are not cut at 48 characters.
 - **Loading ready queries.** The TUI takes over the mouse, which makes copying awkward. Each console keeps the rows of its last `ready` section, and the Cmd-K palette lists them (kind `ready`, weight 45). `Enter` loads one into the editor.
@@ -262,9 +290,25 @@ several results, each rendered as its own table:
 - **Loki parse errors** keep the server message and add a pointer to a stream selector and `all`.
 - **0 series.** A Prometheus query with no series says so and points to `all`.
 - **Discoverability.**
-  - After connecting, the three consoles say "type all and press Enter".
+  - After connecting, every console except Redis says "type all and press Enter". SQL and CQL consoles run `all` on Enter without a `;`.
   - The palette has a "List everything available (all)" action for them.
   - `all` completes and highlights as a keyword.
+- **Function catalogs are static.** Postgres and MySQL have no cheap list of functions with usage, and SQLite's `pragma_function_list` has names only, so each dialect ships usage rows: shared SQL functions plus dialect ones (JSON operators, dates, text). The CQL list uses Cassandra 5 snake_case names, each checked against a Cassandra 5.0 container.
+
+#### Grafana charts
+
+`chart <uid> [panel]` loads `/api/dashboards/uid/<uid>`, flattens collapsed rows, keeps panels whose id equals `panel`
+or whose title contains it, and sends one `POST /api/ds/query` per panel:
+
+- **Queries are the panel's own targets.** Each target keeps its fields (`expr`, `legendFormat`, `queryType`, …). Hidden targets are skipped. The datasource is the target's when it has a `uid`, otherwise the panel's. `intervalMs` is range/300 (at least 1 s) for `now-<n><unit>` ranges and 15 s otherwise, with `maxDataPoints` 300, so Loki does not step every second.
+- **Frames become series.** Each number field of a frame with a time field is a series. It is named from `displayNameFromDS` (the legend format), then its labels, then the frame name. Nulls are `NaN`. The time field `interval` is the series step.
+- **Shape by panel type.** `stat` → stat. `gauge`, `bargauge`, `barchart`, `piechart` → gauge. Any other panel with numeric frames → timeseries. `table` panels, and frames without numbers, render as a table. Frames with `Time` and `Line` fields become log lines, newest first. Query errors replace the message, and a panel without queries says so.
+- **Rendering is text.** `internal/ui/chart.go` writes tview color tags, so the same output works in the results pane, in `-capture`, and in one-shot mode through the ANSI converter:
+  - *timeseries:* a 9-row braille canvas (2×4 dots per cell) with the value axis at min, midpoint and max, and 0 as the floor when every value is positive. Consecutive samples are joined with Bresenham lines only when they are at most two steps apart. Each cell takes the color of the last series drawn in it. A time axis and a legend (last, min, max) follow, capped at 12 series.
+  - *stat:* the last value in a 3-row box-drawing digit font, the unit after it, and a sparkline of the range.
+  - *gauge:* `■` filled with the heat gradient and `·` empty, against `fieldConfig.defaults.max`, 100 for `percent`, 1 for `percentunit`, or the largest value.
+  - *units:* `bytes`/`decbytes` (K, M, G), `percent`, `percentunit`, `s` (ms under a second), `ms`, `reqps`; others use K/M/B.
+- **Width.** The results pane is a `resultsView` wrapping `TextView`. Its `Draw` compares the inner width with the last one and re-renders when a result holds a chart, so a chart always fills the pane after a resize or a layout switch. One-shot mode uses the terminal width from `golang.org/x/term` (already a tcell dependency), or 100 columns in a pipe.
 
 ### 4.3 Syntax highlighting
 
@@ -536,7 +580,7 @@ Rules:
 | cassandra | `cassandra:5.0` (512M heap) | 9042 | `infra/cassandra/init.cql` via `cqlsh` in the container |
 | redis | `redis:8` | 6380 | JSON strings, hashes, lists, sorted sets via `redis-cli` in the container |
 | loki | `grafana/loki:3.5.5` | 3100 | JSON log lines pushed through `/loki/api/v1/push` |
-| grafana | `grafana/grafana:latest` | 3000 | provisioned Loki and Prometheus datasources and one dashboard |
+| grafana | `grafana/grafana:latest` | 3000 | provisioned Loki and Prometheus datasources, `devcli-logs` and `devcli-metrics` dashboards |
 | prometheus | `prometheus/prometheus:latest` | 9090 | scrapes itself, Loki and Grafana every 5 s |
 
 SQLite needs no container: `scripts/sample-all.sh start` builds `.run/devcli.db` from `infra/sqlite/init.sql`.
@@ -588,7 +632,10 @@ Unit tests (`go test ./...`), no network:
 | podman parser | JSON with names, ports, states; action argument arrays |
 | jvm | language detection per marker; dump parsing of states, locks and deadlock section; demangling table §4.9 |
 | loki / grafana | `httptest` servers: request paths and parameters, result shaping, error bodies surfaced |
-| sqlite backend | real in-memory database: rows, affected counts, words include tables and columns |
+| sqlite backend | real in-memory database: rows, affected counts, words include tables and columns; `all` lists views, indexes, triggers, foreign keys and pragmas, and every ready query runs |
+| `all` on Enter | SQL and CQL run `all` without `;`, while `select all` still waits for `;` |
+| grafana charts | panels in collapsed rows are drawn; hidden targets are not sent; legend format, panel datasource and interval are sent; a target datasource overrides the panel's; labels name series; nulls stay gaps; logs panels are newest first; a title filter draws one panel; a filter that matches nothing fails |
+| chart rendering | rising series goes bottom left to top right with labeled max, midpoint and min; rows fill the width; gaps are not joined; stat shows 0.25 s as big `250` `ms`; percent gauge fills against 100; units; the chart is redrawn when the pane width changes |
 | prometheus | instant vs `:range` path and step, targets health, metric and label completion |
 | discover | connect URLs from env and ports, exporters skipped, unpublished ports skipped, `grafana/loki` is Loki, tab order |
 | palette | Cmd-K and Ctrl-K open it from an editor; tab name ranks first; pid finds its process; live key inserts into Redis; Esc clears then closes; tabs and connect outrank noise |
@@ -601,6 +648,8 @@ Integration tests (`-tags integration`), run by `scripts/test-all.sh` when the c
 - Each backend connects to its container, runs a seeded query, and checks rows and completion words.
 - The JVM test dumps the sample process and expects the deadlock to be detected.
 - The CLI test runs every one-shot mode against the stack.
+- `all` runs on Postgres, MySQL, SQLite and Cassandra with no `unavailable` section, and every ready query it prints executes.
+- `chart devcli-metrics` draws stat, gauge and timeseries charts with data. `chart devcli-logs api logs` shows Loki lines, and `query prometheus up` draws a chart.
 
 Unit tests run with `-race`, which found and fixed a data race on the tabs' visibility flags. A pty run sends the real
 kitty protocol bytes for `Cmd-K` (`ESC [107;9u`) and `Cmd-/` (`ESC [47;9u`) and confirms the palette and the
@@ -670,6 +719,9 @@ alone, and a second uninstall still exits 0.
 | 24 | Install location | `~/.local/bin`, uninstall before install, atomic rename, PATH line only when missing |
 | 25 | "Frozen" after clicking Threads | Root cause: tview `Pages` hands a mouse event to the top page, then to the pages below if it is not consumed. The connect prompt used `Box`'s default handler, which consumes only mouse-down, so the click reached the tab bar. The tab switched and focus moved under a still-visible prompt that no longer got Esc, `n` or `q`. Fix: every overlay is added through `dialogLayer`, which always consumes mouse events; `App.keys` refocuses the top dialog when focus wandered; the prompt handles its own clicks; the confirm dialog goes through the same layer. Regression tests click a tab behind the prompt and behind a confirm dialog |
 | 26 | Late discovery results | If the container scan finishes after the user pressed a key or clicked a tab, show a status-line hint and keep the containers in Cmd-K instead of opening the prompt over their work; `Discover containers` from the palette still opens it |
+| 27 | Discoverability of the databases | The same `all` catalog for MySQL, Postgres, SQLite and Cassandra, built from catalog tables with a per-dialect query list; a section the user cannot read shows `unavailable` instead of failing; Redis stays without `all` |
+| 28 | Grafana charts | Run the panel's own targets through `/api/ds/query` and draw the frames as color-tagged text, instead of the Grafana image renderer plugin (needs an extra container and gives a bitmap a terminal cannot show) or a live tcell panel (would not work in one-shot mode or `-capture`) |
+| 29 | Chart width | Re-render on a pane width change rather than a fixed width, since the console layout switches between side by side and stacked at 120 columns |
 
 ## 13. Not in scope
 

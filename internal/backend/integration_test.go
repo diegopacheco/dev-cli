@@ -141,3 +141,82 @@ func TestIntegrationPrometheus(t *testing.T) {
 		t.Fatalf("metric names must complete, got %d words", len(words))
 	}
 }
+
+func assertAll(t *testing.T, b Backend, ctx context.Context, table string) {
+	t.Helper()
+	res, err := b.Execute(ctx, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res {
+		if strings.HasPrefix(r.Message, "unavailable") {
+			t.Errorf("%s: section %s must load on a real server: %s", b.Name(), r.Title, r.Message)
+		}
+	}
+	var tables []string
+	for _, r := range res {
+		if r.Title == "tables" {
+			for _, row := range r.Rows {
+				tables = append(tables, syntax.Scalar(row[0])+"."+syntax.Scalar(row[1]))
+			}
+		}
+	}
+	if !strings.Contains(strings.Join(tables, " "), table) {
+		t.Fatalf("%s: tables must list %s, got %v", b.Name(), table, tables)
+	}
+	for _, r := range res {
+		if r.Title != "ready queries" {
+			continue
+		}
+		for _, row := range r.Rows {
+			if _, err := b.Execute(ctx, syntax.Scalar(row[0])); err != nil {
+				t.Errorf("%s: ready query %s must run: %v", b.Name(), syntax.Scalar(row[0]), err)
+			}
+		}
+	}
+}
+
+func TestIntegrationAllOnEveryDatabase(t *testing.T) {
+	cases := []struct {
+		b      Backend
+		target string
+		table  string
+	}{
+		{NewPostgres(""), target("DEVCLI_POSTGRES", "postgres://postgres:devcli@127.0.0.1:5432/devcli?sslmode=disable"), "users"},
+		{NewMySQL(""), target("DEVCLI_MYSQL", "mysql://root:devcli@127.0.0.1:3306/devcli"), "users"},
+		{NewSQLite(""), target("DEVCLI_SQLITE", "../../.run/devcli.db"), "hosts"},
+		{NewCassandra(""), target("DEVCLI_CASSANDRA", "127.0.0.1:9042/devcli"), "devcli.users"},
+	}
+	for _, c := range cases {
+		t.Run(c.b.Name(), func(t *testing.T) {
+			assertAll(t, c.b, connect(t, c.b, c.target), c.table)
+		})
+	}
+}
+
+func TestIntegrationGrafanaChartsDrawProvisionedDashboards(t *testing.T) {
+	b := NewGrafana("", "")
+	ctx := connect(t, b, target("DEVCLI_GRAFANA", "http://admin:devcli@127.0.0.1:3000"))
+	res, err := b.Execute(ctx, "chart devcli-metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	for _, r := range res {
+		if r.Chart == nil || len(r.Chart.Series) == 0 {
+			t.Fatalf("panel %s must draw Prometheus data: %s", r.Title, r.Message)
+		}
+		kinds[r.Chart.Kind] = true
+	}
+	if !kinds["stat"] || !kinds["gauge"] || !kinds["timeseries"] {
+		t.Fatalf("the metrics dashboard has stat, gauge and timeseries panels, got %v", kinds)
+	}
+	logs, err := b.Execute(ctx, "chart devcli-logs api logs")
+	if err != nil || len(logs) != 1 || len(logs[0].Logs) == 0 {
+		t.Fatalf("a logs panel must show Loki lines through Grafana: %+v %v", logs, err)
+	}
+	q, err := b.Execute(ctx, "query prometheus up")
+	if err != nil || q[0].Chart == nil || len(q[0].Chart.Series) < 3 {
+		t.Fatalf("a numeric query through Grafana must draw a chart: %+v %v", q, err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -496,5 +497,157 @@ func TestGrafanaAllListsServerObjectsAndReadyCommands(t *testing.T) {
 	}
 	if !strings.Contains(find(res, "alert rules").Message, "unavailable") {
 		t.Fatal("a section the token cannot read must say so instead of failing the whole listing")
+	}
+}
+
+func TestSQLiteAllListsSchemaObjectsAndEveryReadyQueryRuns(t *testing.T) {
+	ctx := context.Background()
+	s := NewSQLite(":memory:")
+	if err := s.Connect(ctx, ":memory:"); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, err := s.Execute(ctx, `create table hosts (id integer primary key, name text);
+create table metrics (id integer, host_id integer references hosts(id), value real);
+create index metrics_host on metrics(host_id);
+create view busy as select * from metrics where value > 1;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("create trigger touch after insert on hosts begin select 1; end"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Execute(ctx, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "commands,ready queries,server,databases,tables,columns,indexes,foreign keys,triggers,pragmas,functions"
+	if strings.Join(titles(res), ",") != want {
+		t.Fatalf("got sections %v", titles(res))
+	}
+	for _, r := range res {
+		if strings.HasPrefix(r.Message, "unavailable") {
+			t.Fatalf("%s must load on SQLite: %s", r.Title, r.Message)
+		}
+	}
+	checks := map[string]string{"tables": "busy", "indexes": "metrics_host", "triggers": "touch", "foreign keys": "hosts", "pragmas": "journal_mode"}
+	for title, name := range checks {
+		r := find(res, title)
+		found := false
+		for i := range r.Columns {
+			found = found || slices.Contains(column(r, i), name)
+		}
+		if !found {
+			t.Errorf("%s must list %s, got %v", title, name, r.Rows)
+		}
+	}
+	ready := column(find(res, "ready queries"), 0)
+	if !slices.Contains(ready, "SELECT * FROM hosts LIMIT 10;") || !slices.Contains(ready, "PRAGMA table_info(metrics);") {
+		t.Fatalf("ready queries must come from the live tables, got %v", ready)
+	}
+	for _, q := range ready {
+		if _, err := s.Execute(ctx, q); err != nil {
+			t.Errorf("a ready query must run as loaded into the editor: %s: %v", q, err)
+		}
+	}
+}
+
+func TestAllRunsOnEnterWithoutASemicolon(t *testing.T) {
+	for _, b := range []Backend{NewSQLite(""), NewPostgres(""), NewMySQL(""), NewCassandra("")} {
+		if !b.RunsOnEnter("all") || !b.RunsOnEnter(" ALL;\n") {
+			t.Errorf("%s: the connected hint says type all and press Enter, so Enter must run it", b.Name())
+		}
+		if b.RunsOnEnter("select all") {
+			t.Errorf("%s: statements that only contain the word all still need a ;", b.Name())
+		}
+	}
+}
+
+func TestQuoteNameKeepsPlainTablesReadable(t *testing.T) {
+	if quoteName("users", `"`) != "users" || quoteName("sales.orders", `"`) != "sales.orders" || quoteName("Order Items", "`") != "`Order Items`" {
+		t.Fatal("only names that would not parse get quoted")
+	}
+}
+
+func TestChartIntervalFollowsTheDashboardRange(t *testing.T) {
+	if intervalMs("now-1h", "now") != 12000 || intervalMs("now-7d", "now-6d") != 288000 {
+		t.Fatal("the step must give about 300 points so a chart is neither empty nor one point per second")
+	}
+	if intervalMs("2026-01-01", "now") != 15000 {
+		t.Fatal("absolute ranges fall back to 15s")
+	}
+}
+
+func frame(name string, labels, config string, times, values string) string {
+	return `{"schema":{"fields":[{"name":"Time","type":"time","config":{"interval":15000}},{"name":"Value","type":"number","labels":` + labels + `,"config":` + config + `}]},"data":{"values":[` + times + `,` + values + `]}}`
+}
+
+func TestGrafanaChartRunsEveryPanelQueryAndShapesByPanelType(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/search":
+			w.Write([]byte(`[]`))
+		case "/api/dashboards/uid/svc":
+			w.Write([]byte(`{"dashboard":{"title":"svc","time":{"from":"now-1h","to":"now"},"panels":[
+{"id":1,"type":"stat","title":"Targets up","datasource":{"uid":"prom"},"targets":[{"refId":"A","expr":"sum(up)","legendFormat":"up"},{"refId":"B","expr":"hidden","hide":true}]},
+{"id":2,"type":"text","title":"Notes"},
+{"id":3,"type":"row","title":"details","panels":[
+  {"id":4,"type":"timeseries","title":"Latency","datasource":{"uid":"prom"},"fieldConfig":{"defaults":{"unit":"s"}},"targets":[{"refId":"A","datasource":{"uid":"other"},"expr":"latency"}]},
+  {"id":5,"type":"logs","title":"API logs","datasource":{"uid":"loki"},"targets":[{"refId":"A","expr":"{app=\"api\"}"}]}
+]}]}}`))
+		case "/api/ds/query":
+			body, _ := io.ReadAll(r.Body)
+			sent = append(sent, string(body))
+			switch {
+			case strings.Contains(string(body), "sum(up)"):
+				w.Write([]byte(`{"results":{"A":{"frames":[` + frame("", `{}`, `{"displayNameFromDS":"up"}`, `[1000,16000,31000]`, `[2,3,3]`) + `]}}}`))
+			case strings.Contains(string(body), "latency"):
+				w.Write([]byte(`{"results":{"A":{"frames":[` + frame("", `{"job":"api"}`, `{}`, `[1000,16000]`, `[0.2,null]`) + `,` + frame("", `{"job":"db"}`, `{}`, `[1000,16000]`, `[0.4,0.5]`) + `]}}}`))
+			default:
+				w.Write([]byte(`{"results":{"A":{"frames":[{"schema":{"fields":[{"name":"labels","type":"other"},{"name":"Time","type":"time"},{"name":"Line","type":"string"}]},"data":{"values":[[{"app":"api","level":"error"},{"app":"api","level":"info"}],[1000,5000],["old","new"]]}}]}}}`))
+			}
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	g := NewGrafana(srv.URL, "")
+	if err := g.Connect(ctx, srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	res, err := g.Execute(ctx, "chart svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(titles(res), ",") != "Targets up,Notes,Latency,API logs" {
+		t.Fatalf("panels inside collapsed rows must be drawn too, got %v", titles(res))
+	}
+	stat := res[0].Chart
+	if stat == nil || stat.Kind != "stat" || stat.Series[0].Name != "up" || stat.Series[0].Values[2] != 3 {
+		t.Fatalf("a stat panel must keep its kind and the legend name from Grafana, got %+v", stat)
+	}
+	if strings.Contains(sent[0], "hidden") || !strings.Contains(sent[0], `"legendFormat":"up"`) || !strings.Contains(sent[0], `"intervalMs":12000`) || !strings.Contains(sent[0], `"uid":"prom"`) {
+		t.Fatalf("the query must be the panel's own target with the panel datasource and a sane step, sent %s", sent[0])
+	}
+	if res[1].Chart != nil || !strings.Contains(res[1].Message, "no queries") {
+		t.Fatalf("a panel without queries must say so, got %+v", res[1])
+	}
+	latency := res[2].Chart
+	if latency == nil || latency.Unit != "s" || len(latency.Series) != 2 || latency.Series[0].Name != "job=api" || !math.IsNaN(latency.Series[0].Values[1]) {
+		t.Fatalf("every frame is a series, labels name it and null stays a gap, got %+v", latency)
+	}
+	if !strings.Contains(sent[1], `"uid":"other"`) {
+		t.Fatalf("a target datasource overrides the panel datasource, sent %s", sent[1])
+	}
+	logs := res[3].Logs
+	if res[3].Chart != nil || len(logs) != 2 || logs[0].Line != "new" || syntax.Scalar(logs[1].Labels[1].Value) != "error" {
+		t.Fatalf("a logs panel must show log lines newest first, got %+v", logs)
+	}
+	one, err := g.Execute(ctx, "chart svc latency")
+	if err != nil || len(one) != 1 || one[0].Title != "Latency" {
+		t.Fatalf("chart with a title fragment must draw only that panel, got %v %v", titles(one), err)
+	}
+	if _, err := g.Execute(ctx, "chart svc nothing"); err == nil {
+		t.Fatal("a panel filter matching nothing must fail loud")
 	}
 }

@@ -44,6 +44,7 @@ type IO struct {
 	InTTY  bool
 	OutTTY bool
 	ErrTTY bool
+	Width  int
 }
 
 var modeFlags = []string{"sql", "cassandra", "redis", "loki", "grafana", "prometheus", "ps", "containers", "threads", "discover"}
@@ -203,7 +204,7 @@ func Main(o Options, t ui.Targets, stdio IO) int {
 	defer cancel()
 	results, err := Execute(ctx, o, t)
 	for _, r := range results {
-		fmt.Fprint(stdio.Out, Colorize(ui.RenderResult(r, o.JSON, stdio.OutTTY), color && stdio.OutTTY))
+		fmt.Fprint(stdio.Out, Colorize(ui.RenderResult(r, o.JSON, stdio.OutTTY, stdio.Width), color && stdio.OutTTY))
 	}
 	return report(stdio, color, err)
 }

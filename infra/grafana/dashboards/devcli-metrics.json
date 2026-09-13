@@ -1,0 +1,61 @@
+{
+  "uid": "devcli-metrics",
+  "title": "devcli metrics",
+  "tags": ["devcli", "prometheus"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "time": {"from": "now-30m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Targets up",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(up)", "legendFormat": "healthy targets"}]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Average scrape duration",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [{"refId": "A", "expr": "avg(scrape_duration_seconds)", "legendFormat": "scrape duration"}]
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Targets healthy",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100}},
+      "targets": [{"refId": "A", "expr": "100 * avg by (job) (up)", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "CPU seconds per second by job",
+      "gridPos": {"x": 0, "y": 5, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (job) (rate(process_cpu_seconds_total[1m]))", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Goroutines by job",
+      "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (job) (go_goroutines)", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Resident memory by job",
+      "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "targets": [{"refId": "A", "expr": "sum by (job) (process_resident_memory_bytes)", "legendFormat": "{{job}}"}]
+    }
+  ]
+}

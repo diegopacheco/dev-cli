@@ -32,6 +32,7 @@ type Result struct {
 	Logs    []LogLine
 	Text    string
 	Wide    bool
+	Chart   *Chart
 	Value   any
 	Message string
 	Elapsed time.Duration

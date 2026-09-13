@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/diegopacheco/dev-cli/internal/cli"
+	"golang.org/x/term"
 )
 
 func isTTY(f *os.File) bool {
@@ -18,6 +19,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "devcli:", err, "(run devcli --help)")
 		os.Exit(2)
 	}
-	stdio := cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, InTTY: isTTY(os.Stdin), OutTTY: isTTY(os.Stdout), ErrTTY: isTTY(os.Stderr)}
+	width, _, _ := term.GetSize(int(os.Stdout.Fd()))
+	stdio := cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, InTTY: isTTY(os.Stdin), OutTTY: isTTY(os.Stdout), ErrTTY: isTTY(os.Stderr), Width: width}
 	os.Exit(cli.Main(opts, cli.DefaultTargets(), stdio))
 }

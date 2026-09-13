@@ -26,6 +26,7 @@ The design is in [design-doc.md](design-doc.md).
   - Redis uses a hand-written RESP2 client.
   - Loki, Grafana and Prometheus use plain `net/http`.
 - **One-shot output:** the same renderers produce tview color tags, which a small converter turns into 24-bit ANSI on a terminal or plain text in a pipe. The ASCII banner goes to stderr, so stdout stays clean for `jq`.
+- **Grafana charts in the terminal:** `chart <uid>` sends each panel's own queries through `POST /api/ds/query` and draws the returned frames as color-tagged text. Time series become braille line charts, and stat, gauge and log panels get their own views. Charts use the width of the results pane (redrawn on resize) or of the terminal in one-shot mode.
 
 ## Architecture
 
@@ -47,9 +48,13 @@ The [SVG source](assets/architecture.svg) uses the Caveat font, a wobble filter,
 - **Threads:** JVMs tagged Java, Scala, Kotlin or Clojure; state colors, a deadlock banner, and frame names that read like source code.
 - **MySQL / Postgres / SQLite / Cassandra:** multi-statement queries, `Enter` runs once the statement ends with `;`. Completion knows live tables and columns.
 - **Redis:** any command. JSON values pretty print, hashes render as objects, keys complete.
-- **`all` in Loki, Grafana and Prometheus:** type `all` and press Enter to see everything the connected server offers:
+- **`all` in MySQL, Postgres, SQLite, Cassandra, Loki, Grafana and Prometheus:** type `all` and press Enter (no `;` needed) to see everything the connected server offers:
   - the commands of that console;
-  - ready queries built from the server's own labels, metrics, datasources and dashboards. They are printed full width, and `Cmd-K` lists them so `Enter` loads one into the editor;
+  - ready queries built from the server's own tables, labels, metrics, datasources and dashboards. They are printed full width, and `Cmd-K` lists them so `Enter` loads one into the editor;
+  - Postgres: server, databases, schemas, tables with estimated rows and size, columns, indexes, constraints, sequences, routines, triggers, extensions, roles, sessions and functions;
+  - MySQL: server, databases, tables with engine, rows and size, columns, indexes, constraints, routines, triggers, events, users, sessions and functions;
+  - SQLite: server, attached databases, tables and views, columns, indexes, foreign keys, triggers, every pragma and functions;
+  - Cassandra: cluster, peers, keyspaces, tables, columns, indexes, materialized views, user types, user functions, aggregates, virtual tables and CQL functions;
   - Loki: labels with their values, streams, pipeline stages and functions;
   - Grafana: health, datasources, folders, dashboards and alert rules;
   - Prometheus: metrics with type and help, labels, targets and functions.
@@ -57,6 +62,15 @@ The [SVG source](assets/architecture.svg) uses the Caveat font, a wobble filter,
   Typing a bare function name such as `avg_over_time` shows how to call it instead of an empty result or a parse error.
 - **Loki:** LogQL with `labels`, `values`, `:range` and `:limit`, and a colored log view.
 - **Grafana:** `search`, `dashboard`, `datasources`, `alerts`, `query DS EXPR`, `get /api/...`.
+- **Grafana charts:** `chart UID` draws every panel of a dashboard, and `chart UID latency` (a panel id or part of a title) draws one:
+  - timeseries panels become braille line charts with a value axis, a time axis, one color per series, and a legend with last, min and max. Missing samples and nulls stay gaps;
+  - stat panels show the last value in big digits with its unit and a sparkline;
+  - gauge, bar gauge, bar chart and pie chart panels become heat-colored bars against the panel `max`, or 100 for percent;
+  - logs panels use the Loki log view, table panels a table;
+  - panels inside collapsed rows are included, hidden targets are skipped, and a target's datasource overrides the panel's;
+  - the time range comes from the dashboard, with about 300 points per chart; units such as `bytes`, `percent`, `percentunit`, `s` and `ms` are formatted like Grafana.
+
+  `query DS EXPR` also draws a line chart when the result is numeric. `devcli -grafana "chart devcli-metrics"` prints the charts in any terminal.
 - **Prometheus:** PromQL instant or `:range` queries, `metrics`, `labels`, `values`, `targets`, `alerts`, `rules`. Metric names complete.
 - **Java 25 sample:** `sample/java25` is a real multi-threaded app to thread dump, run with `scripts/sample-java.sh start|dump|stop`.
 - **Sample data:** `scripts/sample-all.sh start|stop` starts and fills every data store, and runs the Java 25 sample and a Clojure JVM.
@@ -229,13 +243,14 @@ Each step of `install-macos.sh`, and why:
 | SQLite | `.run/devcli.db` with hosts and 100 latency samples |
 | Loki | api, worker and web log lines |
 | Prometheus | scrapes itself, Loki and Grafana |
+| Grafana | Loki and Prometheus datasources; `devcli-logs` (logs, errors per minute) and `devcli-metrics` (stat, gauge, timeseries and bar gauge panels over Prometheus) dashboards |
 | JVMs | the Java 25 sample (`scripts/sample-java.sh`) and a Clojure loop |
 
 `test-all.sh` runs these steps:
 1. `bash -n` on every script.
 2. `go vet`.
-3. Race-enabled unit tests: lexers, fuzzy search, palette navigation, `Cmd-K`/`Cmd-digit` routing, shortcut filtering, the connect prompt, discovery parsing, the ANSI converter, flag parsing, one-shot output, the Redis protocol, all parsers, and Loki, Grafana and Prometheus against fake servers.
-4. Integration tests against the running stack, including every one-shot mode.
+3. Race-enabled unit tests: lexers, fuzzy search, palette navigation, `Cmd-K`/`Cmd-digit` routing, shortcut filtering, the connect prompt, discovery parsing, the ANSI converter, flag parsing, one-shot output, the Redis protocol, all parsers, `all` on a real in-memory SQLite, Loki, Grafana and Prometheus against fake servers, Grafana panel queries and frame shaping, and chart rendering (axes, gaps, big digits, gauges, units, redraw on resize).
+4. Integration tests against the running stack, including every one-shot mode, `all` on Postgres, MySQL, SQLite and Cassandra with every ready query executed, and charts drawn from both provisioned Grafana dashboards.
 
 ## Printscreens
 
@@ -316,7 +331,7 @@ Every `env="dev"` stream except cache hits, merged newest first. Levels are colo
 
 ### 12. Grafana
 
-`all` lists the Grafana commands first, then ready commands built from this server (`query loki …`, `query prometheus up`, `dashboard devcli-logs`). Health, datasources, folders, dashboards and alert rules follow.
+`chart devcli-metrics` draws the provisioned Prometheus dashboard in the results pane: targets up and the average scrape duration as big-digit stats with sparklines, a percent gauge per job, and CPU and goroutine line charts with a legend. `all` lists the Grafana commands and ready commands such as `chart devcli-logs` and `query prometheus up`.
 
 ![Grafana](printscreens/12-grafana.png)
 

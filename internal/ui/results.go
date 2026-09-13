@@ -19,13 +19,13 @@ func colored(color, text string) string {
 	return "[" + color + "]" + tview.Escape(text) + "[-]"
 }
 
-func RenderResults(results []backend.Result, err error, asJSON bool) string {
+func RenderResults(results []backend.Result, err error, asJSON bool, width int) string {
 	var b strings.Builder
 	for i, r := range results {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(RenderResult(r, asJSON, true))
+		b.WriteString(RenderResult(r, asJSON, true, width))
 	}
 	if err != nil {
 		b.WriteString("\n" + colored(theme.Red, "✖ "+err.Error()) + "\n")
@@ -33,13 +33,13 @@ func RenderResults(results []backend.Result, err error, asJSON bool) string {
 	return b.String()
 }
 
-func RenderResult(r backend.Result, asJSON, withHeader bool) string {
+func RenderResult(r backend.Result, asJSON, withHeader bool, width int) string {
 	var b strings.Builder
-	renderResult(&b, r, asJSON, withHeader)
+	renderResult(&b, r, asJSON, withHeader, width)
 	return b.String()
 }
 
-func renderResult(b *strings.Builder, r backend.Result, asJSON, withHeader bool) {
+func renderResult(b *strings.Builder, r backend.Result, asJSON, withHeader bool, width int) {
 	header := colored(theme.Magenta, "▶ ") + colored(theme.Text, r.Title)
 	if r.Message != "" {
 		header += colored(theme.Dim, "  · ") + colored(theme.Lime, r.Message)
@@ -53,6 +53,8 @@ func renderResult(b *strings.Builder, r backend.Result, asJSON, withHeader bool)
 	switch {
 	case r.Text != "" && !asJSON:
 		b.WriteString(r.Text)
+	case r.Chart != nil && !asJSON:
+		renderChart(b, r.Chart, width)
 	case !withHeader && r.Columns == nil && r.Value == nil && len(r.Logs) == 0:
 		b.WriteString(r.Message + "\n")
 	case asJSON && r.Value != nil:

@@ -132,11 +132,11 @@ func TestEditorDrawsLineNumbersAndHighlightsKeywords(t *testing.T) {
 
 func TestResultsTableAndJSONViews(t *testing.T) {
 	r := []backend.Result{{Title: "q", Columns: []string{"id", "profile"}, Rows: [][]any{{int64(1), `{"lang":"go"}`}, {int64(2), nil}}}}
-	table := RenderResults(r, nil, false)
+	table := RenderResults(r, nil, false, 0)
 	if !strings.Contains(table, "┌") || !strings.Contains(table, "NULL") {
 		t.Fatalf("table view needs borders and visible NULLs: %s", table)
 	}
-	js := RenderResults(r, errors.New("boom"), true)
+	js := RenderResults(r, errors.New("boom"), true, 0)
 	if !strings.Contains(js, `"lang"`) || strings.Contains(js, `\"lang\"`) || !strings.Contains(js, "✖ boom") {
 		t.Fatalf("JSON view must expand JSON cells and still show errors: %s", js)
 	}
@@ -144,7 +144,7 @@ func TestResultsTableAndJSONViews(t *testing.T) {
 
 func TestLogViewColorsLevelsAndExpandsJSONLines(t *testing.T) {
 	logs := []backend.LogLine{{Time: "2026-09-12 15:23:43.000", Labels: syntax.Object{{Key: "app", Value: "api"}, {Key: "level", Value: "error"}}, Line: `{"msg":"boom"}`}}
-	out := RenderResults([]backend.Result{{Title: "{app=\"api\"}", Logs: logs}}, nil, false)
+	out := RenderResults([]backend.Result{{Title: "{app=\"api\"}", Logs: logs}}, nil, false, 0)
 	if !strings.Contains(out, "["+theme.Red+"]ERROR") || !strings.Contains(out, "app=api") || !strings.Contains(out, `"msg"`) {
 		t.Fatalf("got %s", out)
 	}
@@ -411,9 +411,9 @@ func TestPaletteRanksNavigationAboveNoise(t *testing.T) {
 	}
 }
 
-func TestObservabilityConsolesOfferTheAllCatalog(t *testing.T) {
+func TestConsolesWithACatalogOfferTheAllAction(t *testing.T) {
 	a := testApp()
-	for name, want := range map[string]bool{"Loki": true, "Grafana": true, "Prometheus": true, "Postgres": false} {
+	for name, want := range map[string]bool{"Loki": true, "Grafana": true, "Prometheus": true, "Postgres": true, "MySQL": true, "SQLite": true, "Cassandra": true, "Redis": false} {
 		c, i := a.console(name)
 		if c.HasCatalog() != want {
 			t.Fatalf("%s catalog = %v", name, c.HasCatalog())
