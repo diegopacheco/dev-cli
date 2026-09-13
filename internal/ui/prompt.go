@@ -15,6 +15,7 @@ type ConnectPrompt struct {
 	found     []discover.Found
 	checked   []bool
 	index     int
+	listY     int
 	onConnect func([]discover.Found)
 	onClose   func()
 }
@@ -106,6 +107,25 @@ func (p *ConnectPrompt) InputHandler() func(event *tcell.EventKey, setFocus func
 	})
 }
 
+func (p *ConnectPrompt) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+	return p.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		setFocus(p)
+		_, y := event.Position()
+		switch action {
+		case tview.MouseScrollUp:
+			p.index = max(0, p.index-1)
+		case tview.MouseScrollDown:
+			p.index = min(len(p.found)-1, p.index+1)
+		case tview.MouseLeftClick:
+			if row := y - p.listY; row >= 0 && row < len(p.found) {
+				p.index = row
+				p.toggle(row)
+			}
+		}
+		return true, nil
+	})
+}
+
 func (p *ConnectPrompt) Draw(screen tcell.Screen) {
 	sw, sh := screen.Size()
 	p.SetRect(0, 0, sw, sh)
@@ -114,8 +134,9 @@ func (p *ConnectPrompt) Draw(screen tcell.Screen) {
 	bg := tcell.StyleDefault.Background(theme.Color("#121a33"))
 	right := x + w - 2
 	put(screen, x+2, y+1, right, "devcli found these running containers. Pick the ones each console should connect to.", bg.Foreground(theme.Color(theme.Text)))
+	p.listY = y + 3
 	for i, f := range p.found {
-		ry := y + 3 + i
+		ry := p.listY + i
 		st := bg
 		if i == p.index {
 			st = tcell.StyleDefault.Background(theme.Color("#16341f"))

@@ -458,3 +458,91 @@ func TestReadyQueriesFromAllLoadIntoTheEditorFromThePalette(t *testing.T) {
 		t.Fatalf("Enter must load the query into its console, got tab %d text %q", a.current, c.editor.Text())
 	}
 }
+
+func drawn(a *App) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	screen.Init()
+	screen.SetSize(170, 50)
+	a.root.SetRect(0, 0, 170, 50)
+	a.root.Draw(screen)
+}
+
+func clickTab(a *App, title string) {
+	i := a.TabIndex(title)
+	x := a.bar.ranges[i][0] + 1
+	for _, action := range []tview.MouseAction{tview.MouseLeftDown, tview.MouseLeftUp, tview.MouseLeftClick} {
+		a.root.MouseHandler()(action, tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone), func(p tview.Primitive) { a.app.SetFocus(p) })
+	}
+}
+
+func sendKey(a *App, ev *tcell.EventKey) {
+	if a.keys(ev) != nil {
+		a.root.InputHandler()(ev, func(p tview.Primitive) { a.app.SetFocus(p) })
+	}
+}
+
+func TestClickingATabBehindADialogCannotStrandTheDialog(t *testing.T) {
+	a := testApp()
+	a.Switch(0)
+	a.SetFound([]discover.Found{{Kind: "Redis", Container: "cache", Target: "redis://127.0.0.1:6380/0"}})
+	a.promptFound()
+	drawn(a)
+	clickTab(a, "Threads")
+	if front, _ := a.root.GetFrontPage(); front != "connect" || a.tabs[a.current].Title() != "Dashboard" {
+		t.Fatalf("a click behind an open dialog must not reach the tabs, front=%s tab=%s", front, a.tabs[a.current].Title())
+	}
+	sendKey(a, tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if front, _ := a.root.GetFrontPage(); front != "main" {
+		t.Fatalf("Esc must still close the dialog after a stray click, front=%s", front)
+	}
+	clickTab(a, "Threads")
+	if a.tabs[a.current].Title() != "Threads" {
+		t.Fatal("with no dialog open a tab click must switch tabs")
+	}
+}
+
+func TestKeysReachTheDialogEvenIfFocusWandered(t *testing.T) {
+	a := testApp()
+	a.SetFound([]discover.Found{{Kind: "Redis", Container: "cache", Target: "redis://127.0.0.1:6380/0"}})
+	a.promptFound()
+	a.app.SetFocus(a.Threads.table)
+	sendKey(a, runeKey('n', tcell.ModNone))
+	if front, _ := a.root.GetFrontPage(); front != "main" {
+		t.Fatalf("a visible dialog must always receive the keyboard, front=%s", front)
+	}
+}
+
+func TestConfirmDialogSwallowsClicksOutsideIt(t *testing.T) {
+	a := testApp()
+	a.Switch(0)
+	confirmed := false
+	a.confirm("kill", "sure?", "SIGKILL", func() { confirmed = true })
+	drawn(a)
+	clickTab(a, "Processes")
+	if front, _ := a.root.GetFrontPage(); front != "confirm" || a.tabs[a.current].Title() != "Dashboard" {
+		t.Fatalf("clicks outside a confirm dialog must not switch tabs, front=%s tab=%s", front, a.tabs[a.current].Title())
+	}
+	sendKey(a, tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if front, _ := a.root.GetFrontPage(); front != "main" || confirmed {
+		t.Fatal("Esc must cancel the confirm dialog")
+	}
+}
+
+func TestLateContainerScanDoesNotPopADialogOverAnActiveUser(t *testing.T) {
+	a := testApp()
+	a.Switch(a.TabIndex("threads"))
+	sendKey(a, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	a.scanning = false
+	a.SetFound([]discover.Found{{Kind: "Redis", Container: "cache", Target: "redis://127.0.0.1:6380/0"}})
+	a.CloseSplash()
+	a.splashOn.Store(true)
+	a.CloseSplash()
+	if front, _ := a.root.GetFrontPage(); front != "main" {
+		t.Fatalf("once the user is working, a scan result must not steal the screen, front=%s", front)
+	}
+	a.OpenPalette()
+	a.Palette.SetQuery("connect redis")
+	if hits := a.Palette.Hits(); len(hits) == 0 || hits[0].Kind != "connect" {
+		t.Fatalf("the found containers must stay reachable from Cmd-K, got %+v", hits)
+	}
+}

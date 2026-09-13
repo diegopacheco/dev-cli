@@ -668,6 +668,8 @@ alone, and a second uninstall still exits 0.
 | 22 | Ready queries | Built from real labels, metrics and datasources; wide tables so they are never truncated |
 | 23 | JVM sample | One Java 25 multi-file source app in `sample/java25` replaces the single-file `infra/jvm` program |
 | 24 | Install location | `~/.local/bin`, uninstall before install, atomic rename, PATH line only when missing |
+| 25 | "Frozen" after clicking Threads | Root cause: tview `Pages` hands a mouse event to the top page, then to the pages below if it is not consumed. The connect prompt used `Box`'s default handler, which consumes only mouse-down, so the click reached the tab bar. The tab switched and focus moved under a still-visible prompt that no longer got Esc, `n` or `q`. Fix: every overlay is added through `dialogLayer`, which always consumes mouse events; `App.keys` refocuses the top dialog when focus wandered; the prompt handles its own clicks; the confirm dialog goes through the same layer. Regression tests click a tab behind the prompt and behind a confirm dialog |
+| 26 | Late discovery results | If the container scan finishes after the user pressed a key or clicked a tab, show a status-line hint and keep the containers in Cmd-K instead of opening the prompt over their work; `Discover containers` from the palette still opens it |
 
 ## 13. Not in scope
 

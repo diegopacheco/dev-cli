@@ -47,6 +47,7 @@ type App struct {
 	scanErr    error
 	splashOn   atomic.Bool
 	NoDiscover bool
+	interacted bool
 }
 
 type tabBar struct {
@@ -96,6 +97,7 @@ func (b *tabBar) MouseHandler() func(action tview.MouseAction, event *tcell.Even
 		}
 		for i, r := range b.ranges {
 			if x >= r[0] && x < r[1] {
+				b.app.interacted = true
 				b.app.Switch(i)
 				return true, nil
 			}
@@ -221,9 +223,17 @@ func (a *App) keys(event *tcell.EventKey) *tcell.EventKey {
 		a.app.Stop()
 		return nil
 	}
-	if name, _ := a.root.GetFrontPage(); name != "main" {
+	if name, front := a.root.GetFrontPage(); name != "main" {
+		if !front.HasFocus() {
+			if layer, ok := front.(dialogLayer); ok {
+				a.app.SetFocus(layer.Primitive)
+			} else {
+				a.app.SetFocus(front)
+			}
+		}
 		return event
 	}
+	a.interacted = true
 	if event.Key() == tcell.KeyCtrlK || isMeta(event, 'k') {
 		a.OpenPalette()
 		return nil
@@ -303,8 +313,7 @@ func (a *App) confirm(title, text, action string, onYes func()) {
 		return event
 	})
 	modal.SetFocus(0)
-	a.root.AddPage("confirm", modal, true, true)
-	a.app.SetFocus(modal)
+	a.overlay("confirm", modal)
 }
 
 func (a *App) Run(tab string) error {
@@ -333,15 +342,33 @@ func (a *App) Run(tab string) error {
 	return a.app.Run()
 }
 
+type dialogLayer struct {
+	tview.Primitive
+}
+
+func (d dialogLayer) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+	inner := d.Primitive.MouseHandler()
+	return func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		var capture tview.Primitive
+		if inner != nil {
+			_, capture = inner(action, event, setFocus)
+		}
+		return true, capture
+	}
+}
+
 func (a *App) overlay(name string, p tview.Primitive) {
 	a.root.RemovePage(name)
-	a.root.AddPage(name, p, true, true)
+	a.root.AddPage(name, dialogLayer{p}, true, true)
 	a.app.SetFocus(p)
 }
 
 func (a *App) closeOverlay(name string) {
 	a.root.RemovePage(name)
 	if front, p := a.root.GetFrontPage(); front != "main" {
+		if layer, ok := p.(dialogLayer); ok {
+			p = layer.Primitive
+		}
 		a.app.SetFocus(p)
 		return
 	}
@@ -371,7 +398,9 @@ func (a *App) CloseSplash() {
 		return
 	}
 	a.closeOverlay("splash")
-	a.promptFound()
+	if !a.interacted {
+		a.promptFound()
+	}
 }
 
 func (a *App) splashStatus() (string, string) {
@@ -401,8 +430,12 @@ func (a *App) Discover(announce bool) {
 			case len(found) == 0 && announce:
 				a.hints(colored(theme.Yellow, "no database, cache or observability containers running"))
 			}
-			if !a.splashOn.Load() {
+			switch {
+			case a.splashOn.Load():
+			case announce || !a.interacted:
 				a.promptFound()
+			case len(found) > 0:
+				a.hints(colored(theme.Lime, fmt.Sprintf("⬢ found %d data containers · ⌘K type connect to pick one", len(found))))
 			}
 		})
 	}()

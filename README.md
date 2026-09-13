@@ -159,7 +159,8 @@ Backends talk to these server APIs:
 | `sys.*`, `jvm.Dump` | Parsed command output and thread dumps, each with a pure parser covered by tests |
 
 - **One renderer, two outputs.** The TUI and one-shot mode use the same table, JSON and log renderers. For one-shot output, `cli.Colorize` turns the tview tags into ANSI escapes or strips them.
-- **Discovery asks first.** Containers are only suggested, and nothing connects until you press Enter. Only one container of each kind can be checked, because a console holds one connection.
+- **Discovery asks first.** Containers are only suggested, and nothing connects until you press Enter. Only one container of each kind can be checked, because a console holds one connection. If the scan finishes after you have started working, devcli shows a status-line hint instead of popping the dialog, and the containers stay available in `Cmd-K`.
+- **Dialogs never strand the UI.** Every dialog (splash, connect prompt, palette, shortcuts, confirm) sits in a layer that swallows all mouse events, and keys always go to the top dialog. A click on a tab behind a dialog can no longer switch the tab underneath and leave a dialog that ignores Esc.
 - **Connection generations.** Picking a container while a console is still connecting to its default bumps a counter. The late result of the first connect is then ignored, and the backend is never used by two goroutines at once.
 - **Shortcuts that work while typing.** `Cmd`/`Ctrl` shortcuts are handled before the editor. Plain `q`, `?` and digits only act outside editors, and `Ctrl-Q` quits from anywhere.
 - **Few libraries.** Drivers only where a binary protocol needs one; everything else is hand-written.
