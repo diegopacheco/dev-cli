@@ -105,6 +105,18 @@ stop_bg() {
   log "$name stopped"
 }
 
+wait_jvm() {
+  local name started
+  name="$1"
+  started=$SECONDS
+  until jcmd "$(cat "$RUN/$name.pid")" VM.version >/dev/null 2>&1; do
+    pid_alive "$name" || fail "$name exited, see $LOGS/$name.log"
+    [ $((SECONDS - started)) -lt 60 ] || fail "$name did not answer jcmd after 60 seconds"
+    sleep 1
+  done
+  log "$name ready"
+}
+
 require() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 is required but not installed"
 }

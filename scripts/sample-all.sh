@@ -28,24 +28,15 @@ start() {
   wait_for PROMETHEUS sh -c "curl -fsS '$DEVCLI_PROMETHEUS/api/v1/query?query=up' | grep -q loki"
   log "prometheus scraping: prometheus, loki, grafana"
 
-  start_bg jvm-java java "$ROOT/infra/jvm/DevcliJvm.java"
+  "$SCRIPTS/sample-java.sh" start
   start_bg jvm-clojure clojure -M -e "(ns devcli.sample) (defn worker-loop [] (Thread/sleep 1000) (recur)) (worker-loop)"
-  for name in $JVM_SAMPLES; do
-    started=$SECONDS
-    until jcmd "$(cat "$RUN/$name.pid")" VM.version >/dev/null 2>&1; do
-      pid_alive "$name" || fail "$name exited, see $LOGS/$name.log"
-      [ $((SECONDS - started)) -lt 60 ] || fail "$name did not answer jcmd after 60 seconds"
-      sleep 1
-    done
-    log "$name ready"
-  done
+  wait_jvm jvm-clojure
   log "sample data loaded"
 }
 
 stop() {
-  for name in $JVM_SAMPLES; do
-    stop_bg "$name"
-  done
+  "$SCRIPTS/sample-java.sh" stop
+  stop_bg jvm-clojure
   podman-compose -f "$ROOT/podman-compose.yml" stop >"$LOGS/compose-stop.log" 2>&1 || fail "podman-compose stop failed, see $LOGS/compose-stop.log"
   for name in $(service_names); do
     port="$(service_port "$name")"

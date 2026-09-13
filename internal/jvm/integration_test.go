@@ -40,8 +40,14 @@ func TestIntegrationDeadlockedSampleJVM(t *testing.T) {
 			deadlocked++
 		}
 	}
-	if deadlocked != 2 {
-		t.Fatalf("order-worker and stock-worker deadlock by design, found %d deadlocked threads", deadlocked)
+	if deadlocked != 4 {
+		t.Fatalf("the java 25 sample deadlocks two monitor threads and two ReentrantLock threads by design, found %d", deadlocked)
+	}
+	states := d.Counts()
+	for _, s := range []string{"RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING"} {
+		if states[s] == 0 {
+			t.Errorf("the sample must produce %s threads so every state color is exercised, got %v", s, states)
+		}
 	}
 	cd, err := ThreadDump(ctx, sys.Run, clojure.PID)
 	if err != nil {

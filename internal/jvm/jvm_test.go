@@ -36,9 +36,9 @@ func TestMainNameSkipsOptionValues(t *testing.T) {
 }
 
 func TestParseProcessesOnlyKeepsJava(t *testing.T) {
-	out := "42331 java infra/jvm/DevcliJvm.java\n42332 /jdk/bin/java -cp clojure-1.12.4.jar clojure.main -e x\n501 /bin/zsh -l\n"
+	out := "42331 java sample/java25/src/DevcliJvm.java\n42332 /jdk/bin/java -cp clojure-1.12.4.jar clojure.main -e x\n501 /bin/zsh -l\n"
 	p := ParseProcesses(out)
-	if len(p) != 2 || p[0].Main != "infra/jvm/DevcliJvm.java" || p[1].Language != Clojure || p[1].Main != "clojure.main" {
+	if len(p) != 2 || p[0].Main != "sample/java25/src/DevcliJvm.java" || p[1].Language != Clojure || p[1].Main != "clojure.main" {
 		t.Fatalf("got %+v", p)
 	}
 }
@@ -138,5 +138,57 @@ func TestDemangleShowsSourceLevelNames(t *testing.T) {
 func TestRuntimeFramesAreRecognized(t *testing.T) {
 	if !IsRuntimeFrame("clojure.lang.Compiler.eval(Compiler.java:1)") || IsRuntimeFrame("devcli.sample$worker_loop.invoke") {
 		t.Fatal("application frames must not be dimmed")
+	}
+}
+
+const twoDeadlocks = `"ledger-writer" #54 [1] daemon prio=5 os_prio=31 cpu=0.01ms elapsed=6s tid=0x1 nid=1 waiting for monitor entry  [0x1]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+	at Deadlocks.monitors(Deadlocks.java:20)
+
+"payment-refund" #57 [2] daemon prio=5 os_prio=31 cpu=0.01ms elapsed=6s tid=0x2 nid=2 waiting on condition  [0x2]
+   java.lang.Thread.State: WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.2/Native Method)
+	- parking to wait for  <0x00000070350002e8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+	at Deadlocks.locks(Deadlocks.java:29)
+
+   Locked ownable synchronizers:
+	- <0x000000703514f978> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+
+Found one Java-level deadlock:
+=============================
+"ledger-writer":
+  waiting to lock monitor 0x000000089b592ae0 (object 0x000000703503d2c0, a java.lang.Object),
+  which is held by "inventory-writer"
+
+Java stack information for the threads listed above:
+===================================================
+"ledger-writer":
+	at Deadlocks.monitors(Deadlocks.java:20)
+
+Found one Java-level deadlock:
+=============================
+"payment-refund":
+  waiting for ownable synchronizer 0x00000070350002e8, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "payment-capture"
+
+Java stack information for the threads listed above:
+===================================================
+"payment-refund":
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.2/Native Method)
+
+Found 2 deadlocks.
+`
+
+func TestParseDumpFindsEveryDeadlockNotOnlyTheFirst(t *testing.T) {
+	d := ParseDump(twoDeadlocks)
+	if len(d.Threads) != 2 {
+		t.Fatalf("got %d threads", len(d.Threads))
+	}
+	if !d.Threads[0].Deadlocked || !d.Threads[1].Deadlocked {
+		t.Fatal("a ReentrantLock deadlock reported after a monitor deadlock must still mark its threads, or users miss it")
+	}
+	report := strings.Join(d.Deadlocks, "\n")
+	if !strings.Contains(report, "ownable synchronizer") || !strings.HasSuffix(report, "Found 2 deadlocks.") {
+		t.Fatalf("both deadlock reports and the total must be kept, got %q", report)
 	}
 }

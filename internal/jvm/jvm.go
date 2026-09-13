@@ -141,15 +141,19 @@ func ParseDump(out string) Dump {
 		}
 		if strings.HasPrefix(line, "Found one Java-level deadlock") || strings.HasPrefix(line, "Found a total of") {
 			flush()
+			inReport := false
 			for ; i < len(lines); i++ {
-				if strings.HasPrefix(lines[i], "Java stack information") {
-					break
-				}
-				d.Deadlocks = append(d.Deadlocks, strings.TrimRight(lines[i], " \r"))
-			}
-			for ; i < len(lines); i++ {
-				if strings.HasPrefix(lines[i], "Found ") && strings.Contains(lines[i], "deadlock.") {
-					d.Deadlocks = append(d.Deadlocks, lines[i])
+				l := strings.TrimRight(lines[i], " \r")
+				switch {
+				case strings.HasPrefix(l, "Found one Java-level deadlock") || strings.HasPrefix(l, "Found a total of"):
+					inReport = true
+					d.Deadlocks = append(d.Deadlocks, l)
+				case strings.HasPrefix(l, "Java stack information"):
+					inReport = false
+				case strings.HasPrefix(l, "Found ") && strings.Contains(l, " deadlock") && strings.HasSuffix(l, "."):
+					d.Deadlocks = append(d.Deadlocks, l)
+				case inReport:
+					d.Deadlocks = append(d.Deadlocks, l)
 				}
 			}
 			break
