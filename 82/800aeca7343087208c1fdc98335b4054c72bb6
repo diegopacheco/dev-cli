@@ -1,0 +1,29 @@
+internal/ui/app.go
+  s_503d2792ee92e1::t_3737ae3e78f4ad 50,100,236,401-403,433-435,437-438
+  s_503d2792ee92e1::t_9c0e90f7fe48ac 226-233,316,345-359,362,369-371
+README.md
+  s_503d2792ee92e1::t_3a79c76ba7602c 162-163
+internal/ui/ui_test.go
+  s_503d2792ee92e1::t_6e081b4f87293b 461-529
+  s_503d2792ee92e1::t_3737ae3e78f4ad 530-548
+internal/ui/prompt.go
+  s_503d2792ee92e1::t_9c0e90f7fe48ac 18,110-128,137,139
+design-doc.md
+  s_503d2792ee92e1::t_b97543cc73d3b4 671-672
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "82800aeca7343087208c1fdc98335b4054c72bb6",
+  "prompts": {},
+  "sessions": {
+    "s_503d2792ee92e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c426b35a-f92d-4f7b-a951-aaf524d01d8e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "diegopacheco <diego.pacheco.it@gmail.com>"
+    }
+  }
+}
