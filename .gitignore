@@ -34,3 +34,12 @@ go.work.sum
 bin/
 .run/
 *.db
+target/
+*.class
+*.jar
+*.war
+.gradle/
+build/
+.DS_Store
+!gradle-wrapper.jar
+!maven-wrapper.jar
